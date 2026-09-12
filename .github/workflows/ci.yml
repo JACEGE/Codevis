@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-15-intel, macos-15]
+        node: ['22.12.0', '24']
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+      - run: npm ci
+      # Root-level tests exercise browser sanitization and Three.js resource
+      # helpers directly, so the separately locked frontend dependencies are
+      # part of the test environment too.
+      - run: npm ci --prefix frontend
+      - run: npm run audit:release
+      - run: npm run audit:dependencies
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm --prefix frontend run build
+      # Exercise the actual packed artifact so omitted files and clean-project
+      # startup failures are caught before users install a release.
+      - run: npm run smoke -- --browser
+
+  release-ready:
+    name: Release platform gate
+    needs: test
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every platform check to pass
+        env:
+          PLATFORM_RESULT: ${{ needs.test.result }}
+        run: test "$PLATFORM_RESULT" = success

@@ -1,0 +1,24 @@
+@startuml
+title Domain Model
+abstract class BaseEntity {
+  +id : string
+  +save()
+}
+class Order {
+  +submit()
+  -validate()
+  total : number
+}
+interface Repository {
+  +findById(id)
+}
+class OrderRepo {
+  +findById(id)
+  +persist(order)
+}
+
+BaseEntity <|-- Order
+Repository <|.. OrderRepo
+Order --> OrderRepo : uses
+Order *-- LineItem
+@enduml

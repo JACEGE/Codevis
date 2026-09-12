@@ -1,0 +1,13 @@
+@startuml
+title Checkout
+start
+:Validate Cart;
+if (valid?) then (yes)
+  :Charge Payment;
+  :Save Order;
+else (no)
+  :Show Error;
+endif
+:Send Confirmation;
+stop
+@enduml

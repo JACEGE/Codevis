@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "cases": [
+    { "id": "java-unknown-receiver", "extension": ".java", "source": "class A { void save(){} void invoke(External external){ external.save(); } }", "forbidCall": { "caller": "invoke", "target": "save" } },
+    { "id": "go-unknown-receiver", "extension": ".go", "source": "package p\nfunc Run(){}\nfunc invoke(external External){ external.Run() }", "forbidCall": { "caller": "invoke", "target": "Run" } },
+    { "id": "ruby-unknown-receiver", "extension": ".rb", "source": "def run; end\ndef invoke(client); client.run(); end", "forbidCall": { "caller": "invoke", "target": "run" } },
+    { "id": "lua-unknown-receiver", "extension": ".lua", "source": "function run() end\nfunction invoke(external) external.run() end", "forbidCall": { "caller": "invoke", "target": "run" } },
+    { "id": "java-nested-receiver", "extension": ".java", "source": "class A { void save(){} void invoke(External e){ e.child.save(); } }", "forbidCall": { "caller": "invoke", "target": "save" } },
+    { "id": "go-nested-receiver", "extension": ".go", "source": "package p\nfunc Run(){}\nfunc invoke(outer Outer){ outer.worker.Run() }", "forbidCall": { "caller": "invoke", "target": "Run" } },
+    { "id": "ruby-nested-receiver", "extension": ".rb", "source": "def run; end\ndef invoke(client); client.api.run(); end", "forbidCall": { "caller": "invoke", "target": "run" } },
+    { "id": "typescript-nested-receiver", "extension": ".ts", "source": "function local(){} function invoke(ref: Ref){ ref.current.local(); }", "forbidCall": { "caller": "invoke", "target": "local" } },
+    { "id": "rust-method-receiver", "extension": ".rs", "source": "fn run(){} fn invoke(worker: Worker){ worker.run(); }", "forbidCall": { "caller": "invoke", "target": "run" } },
+    { "id": "rust-scoped-call", "extension": ".rs", "source": "fn run(){} fn invoke(){ other::run(); }", "forbidCall": { "caller": "invoke", "target": "run" } },
+    { "id": "rust-shadowed-function", "extension": ".rs", "source": "fn work(){} fn caller(work: fn()){ work(); }", "forbidCall": { "caller": "caller", "target": "work" } },
+    { "id": "rust-self-ambiguity", "extension": ".rs", "source": "struct A; struct B; impl A { fn run(&self){} fn go(&self){self.run();} } impl B { fn run(&self){} } fn run(){}", "forbidCall": { "caller": "go", "target": "run" } }
+  ]
+}

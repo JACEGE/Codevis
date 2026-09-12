@@ -1,0 +1,13 @@
+@startuml
+title Shop
+left to right direction
+actor Customer
+actor Admin
+usecase "Submit Order" as UC1
+usecase "Cancel Order" as UC2
+(View Catalog) as UC3
+Customer --> UC1
+Customer --> UC3
+Admin --> UC2
+UC1 ..> UC2 : include
+@enduml

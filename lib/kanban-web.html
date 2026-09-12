@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CodeVis Kanban</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0f; color: #e0e6f0; font-family: 'SF Mono', 'JetBrains Mono', 'Consolas', monospace; font-size: 13px; }
+  h1 { text-align: center; padding: 14px; font-size: 18px; color: #00dcff; letter-spacing: 2px; }
+  .status-bar { text-align: center; color: #6b7394; font-size: 11px; padding: 0 0 10px; }
+  .board { display: flex; gap: 4px; padding: 0 8px 8px; height: calc(100vh - 72px); overflow-x: auto; }
+  .column { flex: 1; min-width: 170px; background: rgba(12,12,20,0.5); border-radius: 8px; display: flex; flex-direction: column; transition: background 0.2s; }
+  .column.drag-over { background: rgba(0,220,255,0.05); }
+  .col-header { padding: 10px 12px; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 2px solid; display: flex; align-items: center; gap: 8px; }
+  .col-header .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .col-header .cnt { margin-left: auto; font-size: 10px; color: #6b7394; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 10px; }
+  .col-body { flex: 1; overflow-y: auto; padding: 6px; }
+  .card { background: rgba(20,20,35,0.9); border-radius: 6px; padding: 9px 11px; margin-bottom: 5px; border-left: 3px solid; cursor: grab; transition: opacity 0.15s, transform 0.1s; }
+  .card:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+  .card.dragging { opacity: 0.3; }
+  .card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
+  .card-id { font-size: 9px; color: #6b7394; }
+  .prio { font-size: 8px; font-weight: 700; padding: 1px 5px; border-radius: 3px; color: #fff; letter-spacing: 0.5px; }
+  .prio-critical { background: #ff4444; }
+  .prio-high { background: #ff8c42; }
+  .prio-medium { background: #6b7394; }
+  .prio-low { background: #3a3f55; }
+  .card-title { font-size: 12px; font-weight: 500; line-height: 1.3; margin-bottom: 3px; }
+  .card-desc { font-size: 10px; color: #6b7394; line-height: 1.3; margin-bottom: 4px; }
+  .card-footer { display: flex; gap: 5px; flex-wrap: wrap; }
+  .badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; }
+  .badge-agent { color: #00dcff; background: rgba(0,220,255,0.1); }
+  .badge-nodes { color: #a855f7; background: rgba(168,85,247,0.1); }
+  .card-comment { margin-top: 4px; font-size: 9px; color: #ffcc00; font-style: italic; padding: 3px 5px; background: rgba(255,204,0,0.05); border-radius: 3px; }
+  .locks-bar { padding: 6px 10px; background: rgba(12,12,20,0.8); border-top: 1px solid rgba(255,255,255,0.05); font-size: 10px; color: #6b7394; }
+  .locks-bar b { color: #ff8c42; font-weight: 600; }
+  .pending-bar { padding: 5px 10px; background: rgba(255,140,66,0.05); border-top: 1px solid rgba(255,140,66,0.1); font-size: 10px; color: #ff8c42; }
+  /* Detail overlay */
+  .overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .detail { width: 600px; max-height: 82vh; background: #0f0f1a; border: 1px solid rgba(0,220,255,0.2); border-radius: 12px; padding: 22px; overflow-y: auto; }
+  .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .detail-id { font-size: 10px; color: #6b7394; }
+  .detail-close { font-size: 16px; color: #6b7394; cursor: pointer; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 4px; background: rgba(255,255,255,0.05); }
+  .detail-close:hover { background: rgba(255,255,255,0.1); }
+  .detail-title { font-size: 17px; font-weight: 600; margin-bottom: 10px; }
+  .detail-meta { display: flex; gap: 7px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .detail-meta .badge { font-size: 10px; padding: 2px 7px; }
+  .detail-section { margin-bottom: 14px; }
+  .detail-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #6b7394; margin-bottom: 6px; }
+  .detail-text { font-size: 12px; line-height: 1.5; color: #c0c8d8; background: rgba(255,255,255,0.03); padding: 10px; border-radius: 6px; border-left: 2px solid rgba(0,220,255,0.3); white-space: pre-wrap; }
+  .detail-instructions { border-left-color: rgba(255,140,66,0.5); background: rgba(255,140,66,0.03); }
+  .node-list { display: flex; flex-direction: column; gap: 3px; }
+  .node-item { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: rgba(255,255,255,0.03); border-radius: 4px; font-size: 11px; flex-wrap: wrap; }
+  .node-type { font-size: 8px; font-weight: 700; color: #a855f7; background: rgba(168,85,247,0.15); padding: 1px 4px; border-radius: 2px; text-transform: uppercase; }
+  .node-name { font-weight: 500; }
+  .node-file { font-size: 9px; color: #6b7394; }
+  .node-lock { font-size: 8px; padding: 1px 5px; border-radius: 3px; margin-left: auto; font-weight: 600; }
+  .node-lock.locked { background: rgba(255,68,68,0.2); color: #ff4444; }
+  .node-lock.free { background: rgba(57,255,133,0.2); color: #39ff85; }
+  .node-lock.pending { background: rgba(255,140,66,0.2); color: #ff8c42; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2e2418; border-radius: 2px; }
+</style>
+</head>
+<body>
+<h1>CODEVIS KANBAN</h1>
+<div class="status-bar" id="status">Connecting...</div>
+<div class="board" id="board"></div>
+<div class="locks-bar" id="locks"></div>
+<div class="pending-bar" id="pending" style="display:none"></div>
+<div class="overlay" id="overlay" style="display:none" onclick="closeDetail()"></div>
+
+<script>
+const COLUMNS = [
+  {key:'backlog', label:'Backlog', color:'#6b7394'},
+  {key:'todo', label:'To Do', color:'#00dcff'},
+  {key:'open', label:'Open', color:'#e0e6f0'},
+  {key:'in_progress', label:'In Progress', color:'#ff8c42'},
+  {key:'blocked', label:'Blocked', color:'#ff4444'},
+  {key:'needs_info', label:'Needs Info', color:'#ffcc00'},
+  {key:'review', label:'Review', color:'#a855f7'},
+  {key:'done', label:'Done', color:'#39ff85'}
+];
+const PRIO = {critical:{l:'CRIT',c:'prio-critical'},high:{l:'HIGH',c:'prio-high'},medium:{l:'MED',c:'prio-medium'},low:{l:'LOW',c:'prio-low'}};
+const API = window.location.origin;
+let draggedTaskId = null;
+let boardData = {tasks:[], locks:[], pendingReleases:[]};
+
+function esc(s) { const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+
+function renderBoard() {
+  const {tasks, locks, pendingReleases} = boardData;
+  const grouped = {};
+  COLUMNS.forEach(c => grouped[c.key] = []);
+  tasks.forEach(t => {
+    const col = grouped[t.status] ? t.status : 'backlog';
+    grouped[col].push(t);
+  });
+
+  document.getElementById('board').innerHTML = COLUMNS.map(col => `
+    <div class="column" id="col-${col.key}"
+         ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)"
+         ondrop="handleDrop(event,'${col.key}')">
+      <div class="col-header" style="border-bottom-color:${col.color}">
+        <span class="dot" style="background:${col.color}"></span>
+        ${col.label}
+        <span class="cnt">${grouped[col.key].length}</span>
+      </div>
+      <div class="col-body">
+        ${grouped[col.key].map(t => {
+          const p = PRIO[t.priority];
+          return `<div class="card ${draggedTaskId===t.taskId?'dragging':''}"
+                       style="border-left-color:${col.color}"
+                       draggable="true"
+                       ondragstart="handleDragStart(event,'${t.taskId}')"
+                       ondragend="handleDragEnd()"
+                       onclick="openDetail('${t.taskId}')">
+            <div class="card-top">
+              <span class="card-id">${esc(t.taskId)}</span>
+              ${p ? `<span class="prio ${p.c}">${p.l}</span>` : ''}
+            </div>
+            <div class="card-title">${esc(t.title)}</div>
+            ${t.description ? `<div class="card-desc">${esc((t.description||'').substring(0,100))}${(t.description||'').length>100?'...':''}</div>` : ''}
+            <div class="card-footer">
+              ${t.assignedTo ? `<span class="badge badge-agent">@${esc(t.assignedTo)}</span>` : ''}
+              ${t.affectedNodes ? `<span class="badge badge-nodes">${t.affectedNodes} nodes</span>` : ''}
+            </div>
+            ${t.lastComment ? `<div class="card-comment">${esc(t.lastComment)}</div>` : ''}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+  `).join('');
+
+  // Locks bar
+  const locksEl = document.getElementById('locks');
+  if (locks.length === 0) { locksEl.textContent = 'No active locks'; }
+  else {
+    const byAgent = {};
+    locks.forEach(l => { if (!byAgent[l.lockedBy]) byAgent[l.lockedBy]=[]; byAgent[l.lockedBy].push(l.name); });
+    locksEl.innerHTML = Object.entries(byAgent).map(([a,n]) => `<b>${esc(a)}</b>: ${n.map(esc).join(', ')}`).join(' &middot; ');
+  }
+
+  // Pending
+  const pendingEl = document.getElementById('pending');
+  if (pendingReleases.length > 0) {
+    pendingEl.style.display = 'block';
+    pendingEl.innerHTML = `Pending releases: ${pendingReleases.map(p => `<b>${esc(p.name)}</b> (${esc(p.lockedBy)})`).join(', ')}`;
+  } else { pendingEl.style.display = 'none'; }
+
+  document.getElementById('status').textContent = `${new Date().toLocaleTimeString()} | ${tasks.length} tasks | ${locks.length} locks`;
+}
+
+// ── Drag and Drop ─────────────────────────────────────────────
+function handleDragStart(e, taskId) {
+  draggedTaskId = taskId;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', taskId);
+  setTimeout(renderBoard, 0);
+}
+function handleDragEnd() { draggedTaskId = null; renderBoard(); }
+function handleDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect='move'; e.currentTarget.classList.add('drag-over'); }
+function handleDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+
+async function handleDrop(e, newStatus) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if (!draggedTaskId) return;
+  const task = boardData.tasks.find(t => t.taskId === draggedTaskId);
+  if (!task || task.status === newStatus) { draggedTaskId=null; return; }
+
+  // Optimistic update
+  const oldStatus = task.status;
+  task.status = newStatus;
+  draggedTaskId = null;
+  renderBoard();
+
+  try {
+    const res = await fetch(`${API}/api/tasks/${task.taskId}/status`, {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({status: newStatus})
+    });
+    if (!res.ok) throw new Error('Failed');
+  } catch {
+    task.status = oldStatus;
+    renderBoard();
+  }
+}
+
+// ── Detail Panel ──────────────────────────────────────────────
+async function openDetail(taskId) {
+  const overlay = document.getElementById('overlay');
+  overlay.style.display = 'flex';
+  overlay.innerHTML = `<div class="detail" onclick="event.stopPropagation()"><div style="text-align:center;color:#6b7394;padding:30px">Loading...</div></div>`;
+
+  try {
+    const res = await fetch(`${API}/api/tasks/${taskId}`);
+    const t = await res.json();
+    const p = PRIO[t.priority];
+
+    overlay.innerHTML = `<div class="detail" onclick="event.stopPropagation()">
+      <div class="detail-header">
+        <span class="detail-id">${esc(t.taskId)}</span>
+        <span class="detail-close" onclick="closeDetail()">&#x2715;</span>
+      </div>
+      <div class="detail-title">${esc(t.title)}</div>
+      <div class="detail-meta">
+        ${p ? `<span class="prio ${p.c}" style="font-size:10px;padding:2px 7px">${p.l}</span>` : ''}
+        <span class="badge badge-agent">${esc(t.status)}</span>
+        ${t.assignedTo ? `<span class="badge" style="color:#ff8c42;background:rgba(255,140,66,0.1)">@${esc(t.assignedTo)}</span>` : ''}
+        ${t.createdBy ? `<span class="badge" style="color:#6b7394;background:rgba(255,255,255,0.05)">by ${esc(t.createdBy)}</span>` : ''}
+      </div>
+      <div class="detail-section" style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:#6b7394;margin-bottom:12px">
+        ${t.createdAt ? `<span>Created: ${new Date(t.createdAt).toLocaleString()}</span>` : ''}
+        ${t.updatedAt ? `<span>Updated: ${new Date(t.updatedAt).toLocaleString()}</span>` : ''}
+      </div>
+      ${t.knowledge && t.knowledge.length > 0 ? `
+        <div class="detail-section">
+          <div class="detail-label">Knowledge</div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap">
+            ${t.knowledge.map(k => `<span class="badge" style="color:#39ff85;background:rgba(57,255,133,0.1);font-size:10px;padding:2px 7px">${esc(k)}</span>`).join('')}
+          </div>
+        </div>` : ''}
+      ${t.description ? `<div class="detail-section"><div class="detail-label">Description</div><div class="detail-text">${esc(t.description)}</div></div>` : ''}
+      ${t.workInstructions ? `<div class="detail-section"><div class="detail-label">Work Instructions</div><div class="detail-text detail-instructions">${esc(t.workInstructions)}</div></div>` : ''}
+      ${t.summary ? `<div class="detail-section"><div class="detail-label">Summary</div><div class="detail-text">${esc(t.summary)}</div></div>` : ''}
+      ${t.affectedNodes && t.affectedNodes.length > 0 ? `
+        <div class="detail-section">
+          <div class="detail-label">Affected Nodes (${t.affectedNodes.length})</div>
+          <div class="node-list">
+            ${t.affectedNodes.map(n => `
+              <div class="node-item">
+                <span class="node-type">${esc(n.type||'Node')}</span>
+                <span class="node-name">${esc(n.name)}</span>
+                ${n.file ? `<span class="node-file">${esc(n.file)}</span>` : ''}
+                <span class="node-lock ${n.pendingRelease ? 'pending' : n.locked ? 'locked' : 'free'}">
+                  ${n.pendingRelease ? 'pending release' : n.locked ? 'locked: '+esc(n.lockedBy||'') : 'free'}
+                </span>
+              </div>
+            `).join('')}
+          </div>
+        </div>` : ''}
+      ${t.lastComment ? `<div class="detail-section"><div class="detail-label">Last Comment</div><div class="detail-text" style="border-left-color:rgba(255,204,0,0.5);color:#ffcc00">${esc(t.lastComment)}</div></div>` : ''}
+    </div>`;
+  } catch {
+    overlay.innerHTML = `<div class="detail" onclick="event.stopPropagation()"><div style="text-align:center;color:#ff4444;padding:30px">Failed to load task</div></div>`;
+  }
+}
+
+function closeDetail() { document.getElementById('overlay').style.display='none'; }
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeDetail(); });
+
+// ── Polling ───────────────────────────────────────────────────
+async function poll() {
+  try {
+    const r = await fetch(API + '/api/board');
+    boardData = await r.json();
+    renderBoard();
+  } catch (e) {
+    document.getElementById('status').textContent = 'Connection error: ' + e.message;
+  }
+}
+poll();
+setInterval(poll, 3000);
+</script>
+</body>
+</html>

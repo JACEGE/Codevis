@@ -1,0 +1,39 @@
+{
+    // Der Bridge-Port wird aus dem Projektpfad abgeleitet (server/codevis-paths.cjs:
+    // 4000 + sha1("bridge:<pfad>") % 400), damit zwei Projekte nebeneinander
+    // laufen können. Deshalb steht hier kein fester Port, sondern der Task fragt
+    // ihn beim selben Modul ab, das die Bridge benutzt.
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Dashboard-Port anzeigen",
+            "type": "shell",
+            "command": "node -e \"console.log('Dashboard: http://localhost:' + require('./server/codevis-paths.cjs').BRIDGE_PORT)\"",
+            "problemMatcher": [],
+            "presentation": { "reveal": "always", "panel": "shared" }
+        },
+        {
+            "label": "Dashboard starten",
+            "type": "shell",
+            "command": "codevis dashboard",
+            "isBackground": true,
+            "problemMatcher": [],
+            "presentation": { "reveal": "always", "panel": "dedicated" }
+        },
+        {
+            "label": "Graph-Invarianten prüfen",
+            "detail": "Vergleicht Soll gegen Ist: uid eindeutig, kein id() im Bridge-Code, node/detail exakt, Query vollständig, keine stillen Deckel.",
+            "type": "shell",
+            "command": "node scripts/audit_graph_invariants.mjs --db project_db",
+            "problemMatcher": [],
+            "presentation": { "reveal": "always", "panel": "shared" }
+        },
+        {
+            "label": "Frontend bauen",
+            "type": "shell",
+            "command": "npm run build:frontend",
+            "problemMatcher": [],
+            "presentation": { "reveal": "always", "panel": "shared" }
+        }
+    ]
+}

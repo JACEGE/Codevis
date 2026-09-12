@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "codevis_graph": {
+      "command": "npx",
+      "args": [
+        "--yes",
+        "tsx",
+        "tools/mcp_server.ts"
+      ]
+    },
+    "codevis-brain": {
+      "command": "npx",
+      "args": [
+        "--yes",
+        "tsx",
+        "tools/channels/codevis-brain/server.ts"
+      ]
+    },
+    "codex": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "codex",
+        "mcp-server"
+      ]
+    }
+  }
+}

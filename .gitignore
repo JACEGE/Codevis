@@ -1,0 +1,42 @@
+node_modules/
+.env*
+!.env.example
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+react-source/
+data/
+frontend/dist/
+.claude/backups/
+.claude/filelocks/
+# Runtime state — written by hooks/agents while a team is working
+.claude/locks.json
+.claude/team-activity.jsonl
+# Local config left by the retired Brain channel launcher
+tools/channels/codevis-brain/brain.mcp.generated.json
+# Web-explorer crawl output
+tools/webexplorer/out/
+.claude/logs/
+
+# Claude Code local (per-machine) settings
+.claude/settings.local.json
+
+# Log files (frontend error dumps, ad-hoc captures)
+*.log
+.playwright-mcp/
+
+# Bun lockfile — the brain channel migrated from Bun to `npx tsx`; npm is the
+# single package manager. Keep package-lock.json only.
+bun.lock
+tools/bun.lock
+.codevis/
+
+# Agent worktrees: full checkouts of other branches, created by the harness.
+# Untracked but not ignored, they were one `git add .` away from being
+# committed — which would have pulled entire branch copies into the repo.
+.claude/worktrees/
+
+# npm pack output
+*.tgz

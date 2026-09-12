@@ -1,0 +1,19 @@
+@startuml
+title Checkout Flow
+actor User
+participant "Checkout Controller" as Checkout
+participant PaymentService
+database OrderRepo
+
+User -> Checkout : submitOrder()
+Checkout -> PaymentService : charge(amount)
+alt payment ok
+    PaymentService --> Checkout : Receipt
+    Checkout -> OrderRepo : save(order)
+    OrderRepo --> Checkout : orderId
+else payment failed
+    PaymentService --> Checkout : error
+    Checkout -> User : showError()
+end
+Checkout --> User : confirmation
+@enduml
