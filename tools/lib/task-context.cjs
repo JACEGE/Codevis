@@ -46,6 +46,41 @@ async function recordTouchedNodes(session, { taskId, agentId, kind, targets }) {
   return { taskId: active.taskId, touched };
 }
 
+const countOf = (result) => result.records[0]?.get("count")?.toNumber?.()
+  ?? Number(result.records[0]?.get("count") || 0);
+
+/**
+ * TOUCHED for a raw edit given as line ranges: the File, plus every
+ * Function/Class/Component whose current span overlaps a changed line.
+ * Line numbers must come from the graph's current parse of the file.
+ */
+async function recordTouchedRanges(session, { taskId, kind, file, ranges }) {
+  if (!taskId || !file || !ranges?.length) return 0;
+  const at = Date.now();
+  let touched = 0;
+  const fileResult = await session.run(
+    `MATCH (t:Task {taskId: $taskId}), (n:File {path: $file})
+    MERGE (t)-[r:TOUCHED]->(n)
+    SET r.at = $at, r.kind = $kind
+    RETURN count(n) AS count`,
+    { taskId, file, at, kind },
+  );
+  touched += countOf(fileResult);
+  for (const { start, end } of ranges) {
+    const result = await session.run(
+      `MATCH (t:Task {taskId: $taskId}), (n {file: $file})
+      WHERE (n:Function OR n:Class OR n:Component)
+       AND n.startLine IS NOT NULL AND n.startLine <= $lastLine AND n.endLine >= $firstLine
+      MERGE (t)-[r:TOUCHED]->(n)
+      SET r.at = $at, r.kind = $kind
+      RETURN count(n) AS count`,
+      { taskId, file, firstLine: start, lastLine: end, at, kind },
+    );
+    touched += countOf(result);
+  }
+  return touched;
+}
+
 async function getTouchedNodes(session, taskId) {
   const result = await session.run(
     `MATCH (t:Task {taskId: $taskId})-[r:TOUCHED]->(n)
@@ -75,4 +110,4 @@ async function getSyncFiles(session, { taskId, waveId }) {
   return result.records.map(r => ({ file: r.get('file'), taskId: r.get('taskId') }));
 }
 
-module.exports = { getAgentTaskGroup, recordTouchedNodes, getTouchedNodes, getSyncFiles };
+module.exports = { getAgentTaskGroup, recordTouchedNodes, recordTouchedRanges, getTouchedNodes, getSyncFiles };

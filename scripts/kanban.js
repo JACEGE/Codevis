@@ -23,7 +23,7 @@ const projectDir = process.env.CODEVIS_PROJECT_DIR || path.resolve(__dirname, '.
 const { withInternalWorkspaceAliases } = require('../lib/workspace-names.cjs');
 const config = withInternalWorkspaceAliases(require(path.resolve(projectDir, 'codevis.config.cjs')));
 // Use target workspace (external projects) or meta (self-analysis)
-const meta = config.workspaces.target || config.workspaces.meta;
+const workspace = config.workspaces.target ? 'project_db' : 'codevis_db';
 
 const WATCH = process.argv.includes('--watch');
 const INTERVAL = parseInt(process.argv[process.argv.indexOf('--watch') + 1]) || 3;
@@ -76,7 +76,7 @@ const PRIO_COLORS = {
 };
 
 async function render() {
-    const driver = ladybug.driver((meta.dbUri || meta.neo4jUri), ladybug.auth.basic(meta.auth.user, meta.auth.pass));
+    const driver = ladybug.workspace(workspace);
     const session = driver.session();
 
     try {

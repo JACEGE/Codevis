@@ -103,6 +103,41 @@ function isTestFile(file) {
 }
 
 /**
+ * Public-only member filter.
+ *
+ * A class diagram is read for its surface: what other code can call. Private
+ * helpers (`_x`, JS `#x`, an explicit `private`/`protected` modifier) and
+ * Python dunders are implementation detail and, on a real codebase, most of
+ * the rows. `__init__` stays — it IS the constructor and says how the class is
+ * built. Hidden members are still counted, so a box never reads as complete
+ * when it is not.
+ */
+function isPublicMember(name, visibility) {
+    const n = String(name || "");
+    if (visibility === "private" || visibility === "protected") return false;
+    if (n === "__init__" || n === "constructor") return true;
+    if (/^__.*__$/.test(n)) return false;
+    return !n.startsWith("_") && !n.startsWith("#");
+}
+
+/** Class count above which the automatic ('auto') simplifications apply. */
+const AUTO_THRESHOLD = 40;
+
+/**
+ * Resolve a true/false/'auto' option. 'auto' yields `whenLarge` above the
+ * threshold and its opposite below it.
+ */
+function resolveAuto(value, large, whenLarge) {
+    if (value === "auto") return large ? whenLarge : !whenLarge;
+    if (value === false || value === "false") return false;
+    return Boolean(value);
+}
+
+/** Library bases that mark a class as a contract, by last name segment. */
+const INTERFACE_BASES = new Set(["Protocol"]);
+const ABSTRACT_BASES = new Set(["ABC", "ABCMeta"]);
+
+/**
  * Read the class model.
  *
  * @param {object} session Open graph session.
@@ -116,6 +151,16 @@ function isTestFile(file) {
  *        the classes' methods.
  * @param {boolean} [opts.onlyConnected=false] Drop classes with no relation at
  *        all — useful on large graphs where isolated helper classes dominate.
+ *        `includeUses` and `onlyConnected` also accept 'auto': uses off and
+ *        onlyConnected on once more than AUTO_THRESHOLD classes are in scope.
+ * @param {'all'|'public'} [opts.memberVisibility='all'] 'public' hides private
+ *        members and dunders (except __init__); they are counted as hidden.
+ * @param {number|'auto'} [opts.minUseCalls=1] Distinct method-level calls a
+ *        class pair needs before a uses arrow is drawn ('auto': 2 when large).
+ * @param {number} [opts.maxUses=Infinity] Cap on uses arrows; the ones with
+ *        the most calls are kept, the rest reported as stats.usesOmitted.
+ * @param {boolean|'auto'} [opts.groupByDirectory=false] Resolved into
+ *        model.options for the renderer ('auto': large and no pathPrefix).
  * @returns {Promise<{classes: Array, relations: Array, stats: object}>}
  */
 async function readClassModel(session, opts = {}) {
@@ -128,7 +173,14 @@ async function readClassModel(session, opts = {}) {
         includeUses = true,
         onlyConnected = false,
         includeTests = true,
+        memberVisibility = "all",
+        minUseCalls = 1,
+        maxUses = Infinity,
+        groupByDirectory = false,
+        autoThreshold = AUTO_THRESHOLD,
     } = opts;
+    const publicOnly = memberVisibility === "public";
+    const keepMember = (name, visibility) => !publicOnly || isPublicMember(name, visibility);
 
     const inScope = (file) => !pathPrefix || (file || "").startsWith(pathPrefix);
 
@@ -163,8 +215,23 @@ async function readClassModel(session, opts = {}) {
             hiddenAttributes: 0,
             methods: [],
             hiddenMethods: 0,
+            stereotype: null,
+            abstractMethods: 0,
+            totalMethods: 0,
         });
     }
+
+    // The automatic simplifications key off how many project classes are in
+    // scope — counted before onlyConnected, which is itself one of them.
+    const large = classes.size > autoThreshold;
+    const effIncludeUses = resolveAuto(includeUses, large, false);
+    const effOnlyConnected = resolveAuto(onlyConnected, large, true);
+    const effGroup = groupByDirectory === "auto"
+        ? large && !pathPrefix
+        : groupByDirectory === true || groupByDirectory === "true";
+    const effMinUseCalls = minUseCalls === "auto"
+        ? (large ? 2 : 1)
+        : Math.max(1, Math.trunc(Number(minUseCalls)) || 1);
 
     // --- attributes ----------------------------------------------------------
     // A dataclass declares its entire shape as fields and has no methods at all,
@@ -200,7 +267,8 @@ async function readClassModel(session, opts = {}) {
             MATCH (c:Class)-[:CONTAINS]->(f:Function)
             RETURN c.name AS cls, c.file AS clsFile,
                    f.name AS fn, f.signature AS signature, f.startLine AS startLine,
-                   f.decorators AS decorators, f.return_type AS returnType
+                   f.decorators AS decorators, f.return_type AS returnType,
+                   f.isAbstract AS isAbstract, f.visibility AS visibility
         `);
         for (const r of methodRes.records) {
             const owner = classes.get(classKey(val(r, "cls"), val(r, "clsFile")));
@@ -216,13 +284,17 @@ async function readClassModel(session, opts = {}) {
             if (isPropertyAccessor(val(r, "decorators"), name)) {
                 owner.attributes.push({
                     name,
+                    visibility: val(r, "visibility") || null,
                     declaredType: val(r, "returnType") || null,
                     startLine: val(r, "startLine"),
                 });
                 continue;
             }
+            owner.totalMethods += 1;
+            if (val(r, "isAbstract") === true) owner.abstractMethods += 1;
             owner.methods.push({
                 name,
+                visibility: val(r, "visibility") || null,
                 signature: val(r, "signature") || `${name}()`,
                 startLine: val(r, "startLine"),
             });
@@ -245,8 +317,11 @@ async function readClassModel(session, opts = {}) {
             const byName = new Map();
             for (const m of cls.methods) if (!byName.has(m.name)) byName.set(m.name, m);
             cls.methods = [...byName.values()];
+            const visibleMethods = cls.methods.filter((m) => keepMember(m.name, m.visibility));
+            cls.hiddenMethods = cls.methods.length - visibleMethods.length;
+            cls.methods = visibleMethods;
             if (cls.methods.length > methodCap) {
-                cls.hiddenMethods = cls.methods.length - methodCap;
+                cls.hiddenMethods += cls.methods.length - methodCap;
                 cls.methods = cls.methods.slice(0, methodCap);
             }
         }
@@ -271,8 +346,11 @@ async function readClassModel(session, opts = {}) {
                 else if (!prev.declaredType && a.declaredType) byName.set(a.name, a);
             }
             cls.attributes = [...byName.values()];
+            const visibleAttributes = cls.attributes.filter((a) => keepMember(a.name, a.visibility));
+            cls.hiddenAttributes = cls.attributes.length - visibleAttributes.length;
+            cls.attributes = visibleAttributes;
             if (cls.attributes.length > attributeCap) {
-                cls.hiddenAttributes = cls.attributes.length - attributeCap;
+                cls.hiddenAttributes += cls.attributes.length - attributeCap;
                 cls.attributes = cls.attributes.slice(0, attributeCap);
             }
         }
@@ -315,6 +393,10 @@ async function readClassModel(session, opts = {}) {
         // One box per external name, shared by every file that extends it — but
         // in its own key space, so it can never be mistaken for a project class
         // whose file the builder left empty. See externalBaseKey().
+        const lastSegment = String(baseName).split(/[.:]+/).pop();
+        const owner = classes.get(from);
+        if (INTERFACE_BASES.has(lastSegment)) owner.stereotype = "interface";
+        else if (ABSTRACT_BASES.has(lastSegment) && !owner.stereotype) owner.stereotype = "abstract";
         const to = externalBaseKey(baseName);
         if (!classes.has(to)) {
             // An external base is a name we know only from an extends clause —
@@ -390,7 +472,9 @@ async function readClassModel(session, opts = {}) {
     // Derived from method-level CALLS, joined in JS rather than as a four-hop
     // Cypher pattern: the join is trivial here, and a multi-hop pattern would
     // have to survive the Ladybug Cypher translation intact to be trustworthy.
-    if (includeUses) {
+    let usesOmitted = 0;
+    if (effIncludeUses) {
+        const pairCalls = new Map();
         const callRes = await session.run(`
             MATCH (a:Function)-[:CALLS]->(b:Function)
             RETURN a.name AS aName, a.file AS aFile, a.owner AS aOwner,
@@ -405,13 +489,46 @@ async function readClassModel(session, opts = {}) {
             if (seenRelations.has(`${from}|inherits|${to}`)) continue;
             if (seenRelations.has(`${from}|creates|${to}`)) continue;
             if (seenRelations.has(`${from}|association|${to}`)) continue;
-            addRelation(from, to, "uses");
+            const id = `${from}|uses|${to}`;
+            const prev = pairCalls.get(id);
+            if (prev) prev.calls += 1;
+            else pairCalls.set(id, { from, to, calls: 1 });
+        }
+        // Uses arrows are the bulk of the noise on a real codebase: one stray
+        // call draws a line across the whole diagram. The threshold drops the
+        // incidental ones; the cap keeps the strongest and reports the rest
+        // instead of silently pretending they do not exist.
+        let candidates = [...pairCalls.values()].filter((p) => p.calls >= effMinUseCalls);
+        const useCap = Number.isFinite(maxUses) ? Math.max(0, Math.trunc(maxUses)) : Infinity;
+        if (candidates.length > useCap) {
+            const keep = new Set([...candidates].sort((a, b) => b.calls - a.calls).slice(0, useCap));
+            usesOmitted = candidates.length - keep.size;
+            candidates = candidates.filter((p) => keep.has(p));
+        }
+        for (const p of candidates) {
+            addRelation(p.from, p.to, "uses");
+            relations[relations.length - 1].calls = p.calls;
+        }
+    }
+
+    // --- stereotypes ---------------------------------------------------------
+    // Only what the graph actually records: Function.isAbstract (Python
+    // abstractmethod, TS/Java interface and abstract signatures). Every method
+    // abstract and no fields is a pure contract; any abstract method makes the
+    // class abstract. Class nodes carry no abstract/interface flag themselves.
+    for (const cls of classes.values()) {
+        if (cls.external || cls.kind === "enumeration") continue;
+        const fields = cls.attributes.length + cls.hiddenAttributes;
+        if (cls.totalMethods > 0 && cls.abstractMethods === cls.totalMethods && fields === 0) {
+            cls.stereotype = "interface";
+        } else if (cls.abstractMethods > 0 && !cls.stereotype) {
+            cls.stereotype = "abstract";
         }
     }
 
     // --- assembly ------------------------------------------------------------
     let list = [...classes.values()];
-    if (onlyConnected) {
+    if (effOnlyConnected) {
         const connected = new Set(relations.flatMap((r) => [r.from, r.to]));
         list = list.filter((c) => connected.has(c.key));
     }
@@ -432,8 +549,24 @@ async function readClassModel(session, opts = {}) {
             creates: keptRelations.filter((r) => r.kind === "creates").length,
             associations: keptRelations.filter((r) => r.kind === "association").length,
             uses: keptRelations.filter((r) => r.kind === "uses").length,
+            usesOmitted,
+            isolatedHidden: effOnlyConnected
+                ? [...classes.values()].filter((c) => !c.external && !keptKeys.has(c.key)).length
+                : 0,
+        },
+        // What was actually applied after resolving 'auto', so a client can
+        // show the real state of its toggles.
+        options: {
+            includeUses: effIncludeUses,
+            onlyConnected: effOnlyConnected,
+            groupByDirectory: effGroup,
+            minUseCalls: effMinUseCalls,
+            memberVisibility: publicOnly ? "public" : "all",
+            large,
         },
     };
 }
 
-module.exports = { readClassModel, classKey, externalBaseKey, funcKey, isTestFile };
+module.exports = {
+    readClassModel, classKey, externalBaseKey, funcKey, isTestFile, isPublicMember, AUTO_THRESHOLD,
+};

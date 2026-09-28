@@ -9,7 +9,7 @@
  *     workflow/runtime nodes that used to live in their own tables (Task,
  *     Knowledge, BraindumpSession, User, UserEvent, RouteEvent,
  *     VisibleComponent, LogEntry).
- *   - The semantic Neo4j primary label is stored in the `label` STRING column.
+ *   - The primary semantic label is stored in the `label` STRING column.
  *     `label(n)` in Kuzu returns the TABLE name (always "CodeNode"), so it
  *     cannot distinguish Function from Variable — hence the dedicated `label`
  *     column.
@@ -34,9 +34,9 @@
  *
  *   - `uid` is the stable primary key used to join edges.
  *   - `seq` is a globally-unique INT64 (0,1,2,...) assigned at migration time —
- *     the numeric node id the driver/frontend uses in place of Neo4j `id(n)`.
+ *     a numeric display sequence; public identity comes from elementId(n).
  *
- *   - Rel tables: one table per Neo4j rel type, ALL declared
+ *   - Rel tables: one table per relationship type, ALL declared
  *     `FROM CodeNode TO CodeNode` (every endpoint now lives in CodeNode).
  *     Property columns are preserved.
  *
@@ -77,12 +77,12 @@ const NODE_TABLES = [
   `CREATE NODE TABLE CodeNode(
       uid STRING,
       seq INT64,               -- globally-unique numeric id (0,1,2,...), assigned at migration
-      label STRING,            -- original Neo4j primary semantic label (Function, File, Task, Knowledge, ASTNode, ...)
+      label STRING,            -- primary semantic label (Function, File, Task, Knowledge, ASTNode, ...)
 
       -- ===== shared / code identity =====
       name STRING,
       file STRING,
-      path STRING,             -- File nodes are keyed on path in Neo4j
+      path STRING,             -- source file path
 
       -- ===== position / source (code nodes) =====
       startLine INT64,
@@ -123,7 +123,7 @@ const NODE_TABLES = [
       layoutY DOUBLE,
       layoutZ DOUBLE,
 
-      elementId STRING,        -- AST/DOM/ControlFlow local id (NOT neo4j elementId())
+      elementId STRING,        -- AST/DOM/ControlFlow local id (separate from query elementId())
 
       -- ===== multi-label fold-ins =====
       kind STRING,             -- ControlFlow subtype (if/for/while/try/switch/...)
@@ -265,6 +265,8 @@ const NODE_TABLES = [
       content STRING,          -- name/category/createdAt/updatedAt shared above
 
       -- ===== Annotation (LLM/human semantic proposals) =====
+      changeId STRING,         -- versioned Change projection owner
+      revision INT64,          -- workflow state revision
       annotationId STRING,
       targetUid STRING,        -- exact elementId to re-link after code rebuilds
       tag STRING,
@@ -385,6 +387,14 @@ const REL_SPECS = {
   PASSES_PROP:        { props: "props STRING[], hasSpread BOOLEAN, spreadVars STRING[]" },
 
   // --- workflow edges (now all CodeNode->CodeNode) ------------------------
+  HAS_PHASE:          {},
+  HAS_REQUIREMENT:    {},
+  HAS_CRITERION:      {},
+  VALIDATED_BY:       {},
+  VALIDATES:          {},
+  IMPLEMENTED_BY:     {},
+  IMPLEMENTS:         {},
+  IMPACTS:            {},
   AFFECTS:            {}, // Task -> CodeNode and Task -> Task
   RESERVES:           {}, // Task -> explicit edit scope; never impact traversal
   TOUCHED:            { props: "at INT64, kind STRING" }, // documentary only; never lock traversal
@@ -420,7 +430,7 @@ const REL_SPECS = {
   TRIGGERS:           {}, // UserEvent -> CodeNode
   TRIGGERS_LEAF:      {}, // UserEvent -> CodeNode
   TRIGGERS_RENDER:    { props: "count INT64, firstSeen INT64, lastSeen INT64" },
-  // Neo4j prop name `order` is a reserved keyword in Kuzu DML and cannot be
+  // Application property `order` is a reserved keyword in Kuzu DML and cannot be
   // backtick-escaped in CREATE/SET, so it is migrated under the name `stepOrder`.
   EXECUTION_STEP:     { props: "stepOrder INT64", renamedProps: { order: "stepOrder" } },
   EXECUTION_NEXT:     { props: "count INT64, lastSeen INT64" },
@@ -436,7 +446,7 @@ const REL_SPECS = {
 // REL PROPERTY UNION
 // ----------------------------------------------------------------------------
 // Kuzu/Ladybug is STRICT: reading `r.foo` on a rel table that has no `foo`
-// column is a binder error (Neo4j would just return null). The bridge reads
+// column is a binder error. The bridge reads
 // assorted rel properties generically (e.g. `r.name` on PASSES_PROP), so — just
 // like CodeNode carries the union of all NODE columns — EVERY rel table carries
 // the union of ALL rel properties as nullable columns. A property that does not

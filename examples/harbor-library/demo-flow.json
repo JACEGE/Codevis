@@ -1,0 +1,223 @@
+{
+  "create": {
+    "slug": "limit-loan-renewals",
+    "kind": "feature",
+    "title": "Limit loan renewals",
+    "description": "Members may renew a loan at most twice, so popular items come back into circulation and waiting members get a fair chance."
+  },
+  "steps": [
+    {
+      "phase": "requirements",
+      "markdown": "# Limit loan renewals\nA loan can be renewed while nobody has reserved the item. Today that works forever, so one member can keep a popular DVD for months. Allow two renewals per loan and explain the refusal on the third attempt.",
+      "data": {
+        "problem": "A member can renew the same loan indefinitely while nobody reserves the item.",
+        "desiredBehavior": "Allow at most two renewals per loan and reject the third with a clear message.",
+        "scope": "CirculationService.renew and the Loan model.",
+        "nonGoals": "No change to reservation rules, fees or loan durations.",
+        "constraints": "Renewals blocked by a reservation keep their current error.",
+        "assumptions": "Renewal counts start at zero for loans created before this change.",
+        "openQuestions": []
+      },
+      "entities": [
+        {
+          "id": "REQ-001",
+          "label": "Requirement",
+          "title": "Two renewals per loan",
+          "content": "A loan can be renewed at most two times."
+        },
+        {
+          "id": "REQ-002",
+          "label": "Requirement",
+          "title": "Clear refusal",
+          "content": "The third renewal is rejected with a RuleViolation that names the limit."
+        },
+        {
+          "id": "AC-002",
+          "label": "AcceptanceCriterion",
+          "title": "Two renewals succeed",
+          "content": "A loan without reservations can be renewed twice, each time extending the due date by the item's loan days."
+        },
+        {
+          "id": "AC-001",
+          "label": "AcceptanceCriterion",
+          "title": "Third renewal fails",
+          "content": "Given a loan renewed twice, renewing again returns HTTP 409 with 'Renewal limit reached'."
+        },
+        {
+          "id": "TC-001",
+          "label": "TestCase",
+          "title": "Renew twice, then refuse",
+          "content": "Borrow a book, renew twice successfully, expect the third renewal to throw RuleViolation.",
+          "reason": "Directly proves the new two-renewal limit from REQ-001 and AC-001."
+        },
+        {
+          "id": "TC-002",
+          "label": "TestCase",
+          "title": "Reservation still blocks renewal",
+          "content": "With a waiting reservation, the first renewal already fails with the existing message.",
+          "reason": "Guards the existing reservation rule so the new limit does not replace it."
+        }
+      ],
+      "links": [
+        {
+          "from": "change",
+          "type": "HAS_REQUIREMENT",
+          "to": "REQ-001"
+        },
+        {
+          "from": "change",
+          "type": "HAS_REQUIREMENT",
+          "to": "REQ-002"
+        },
+        {
+          "from": "REQ-001",
+          "type": "HAS_CRITERION",
+          "to": "AC-002"
+        },
+        {
+          "from": "REQ-002",
+          "type": "HAS_CRITERION",
+          "to": "AC-001"
+        },
+        {
+          "from": "AC-002",
+          "type": "VALIDATED_BY",
+          "to": "TC-001"
+        },
+        {
+          "from": "AC-001",
+          "type": "VALIDATED_BY",
+          "to": "TC-001"
+        },
+        {
+          "from": "REQ-001",
+          "type": "VALIDATED_BY",
+          "to": "TC-002"
+        }
+      ]
+    },
+    {
+      "phase": "analysis",
+      "markdown": "# Source analysis\nCirculationService.renew extends dueAt by the item's loan days after checking the reservation queue. Loan has no counter yet. LibraryController does not expose renewals, so only the service changes.",
+      "data": {
+        "facts": "CirculationService.renew checks ReservationService.queueLength and then extends Loan.dueAt.",
+        "approximations": "Static calls show the renewal path; runtime usage is not measured.",
+        "inferences": "A renewCount on Loan is the smallest place to hold the limit.",
+        "risks": "Loans saved before the change have no counter and must default to zero.",
+        "testRationale": "TC-002 guards the existing reservation rule while the new limit is added."
+      },
+      "links": [
+        {
+          "from": "analysis",
+          "type": "IMPACTS",
+          "to": {
+            "nodeId": "Function||file=src/services/CirculationService.ts||name=renew||owner=CirculationService"
+          }
+        },
+        {
+          "from": "analysis",
+          "type": "IMPACTS",
+          "to": {
+            "nodeId": "Class||file=src/domain/Loan.ts||name=Loan"
+          }
+        },
+        {
+          "from": "REQ-001",
+          "type": "VALIDATED_BY",
+          "to": "TC-003"
+        }
+      ],
+      "entities": [
+        {
+          "id": "TC-003",
+          "label": "TestCase",
+          "title": "Legacy loan starts at zero renewals",
+          "content": "A loan created without renewCount can still be renewed twice.",
+          "reason": "Analysis found loans are stored without a counter today, so old loans must default to zero."
+        }
+      ]
+    },
+    {
+      "phase": "architecture",
+      "markdown": "# Keep the rule in the service\nLoan stores the counter; CirculationService enforces the limit next to the existing reservation check. No new class.",
+      "data": {
+        "responsibilities": "Loan records renewCount; CirculationService enforces the limit.",
+        "interfaces": "renew(loanId) keeps its signature and return type.",
+        "compatibility": "Existing loans start with renewCount 0.",
+        "errorHandling": "RuleViolation('Renewal limit reached') maps to HTTP 409 like other rule violations.",
+        "testability": "FixedClock and in-memory repositories cover the rule without I/O.",
+        "alternatives": "A RenewalPolicy class would add indirection for a single constant.",
+        "simplicity": "One field and one guard clause."
+      },
+      "entities": [
+        {
+          "id": "ADR-001",
+          "label": "ArchitectureDecision",
+          "title": "Enforce the limit in CirculationService",
+          "content": "The renewal limit sits next to the reservation check in CirculationService.renew; Loan only stores the count."
+        }
+      ],
+      "judgment": {
+        "decision": "approved",
+        "reviewer": "Example maintainer",
+        "rationale": "Smallest change that keeps rules in one service."
+      }
+    },
+    {
+      "phase": "planning",
+      "markdown": "# Plan\nImplement the counter and guard, then add the two test cases.",
+      "data": {
+        "strategy": "Add renewCount to Loan, guard CirculationService.renew, extend tests/circulation.test.ts.",
+        "dependencies": "Tests follow the implementation in the same task."
+      },
+      "taskLinks": [
+        {
+          "title": "Allow renewing loans twice at most",
+          "implements": [
+            "REQ-001",
+            "REQ-002"
+          ]
+        }
+      ]
+    },
+    {
+      "phase": "development",
+      "complete": false,
+      "markdown": "# Development checkpoint\nThe renewal guard is in progress. Test cases are linked; no test run is recorded yet.",
+      "data": {
+        "summary": "renew is linked to both requirements; tests are planned in tests/circulation.test.ts.",
+        "validation": "No test execution recorded for this Flow yet."
+      },
+      "links": [
+        {
+          "from": "TC-001",
+          "type": "VALIDATES",
+          "to": {
+            "nodeId": "Function||file=src/services/CirculationService.ts||name=renew||owner=CirculationService"
+          }
+        },
+        {
+          "from": "TC-002",
+          "type": "VALIDATES",
+          "to": {
+            "nodeId": "Function||file=src/services/CirculationService.ts||name=renew||owner=CirculationService"
+          }
+        },
+        {
+          "from": "TC-001",
+          "type": "IMPLEMENTED_BY",
+          "to": {
+            "nodeId": "File||path=tests/circulation.test.ts"
+          }
+        },
+        {
+          "from": "TC-003",
+          "type": "VALIDATES",
+          "to": {
+            "nodeId": "Function||file=src/services/CirculationService.ts||name=renew||owner=CirculationService"
+          }
+        }
+      ]
+    }
+  ]
+}

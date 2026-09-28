@@ -13,7 +13,7 @@
  *     it surfaces in `unbound` as a question.
  *   - SCOPING: method-extra (③) is only computed for BOUND classes.
  *
- * Pure function — no Neo4j, no I/O.
+ * Pure function — no database access, no I/O.
  */
 
 "use strict";

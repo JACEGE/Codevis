@@ -55,6 +55,36 @@ wizard's Recreate choice) discards custom configuration. Init installs its exact
 CodeVis version as a local dev dependency when missing, and fails if installation
 fails. Node 22.12 or newer is required. Generated hooks also work in ESM projects.
 
+### Codex MCP setup
+
+Every `codevis init` mode automatically adds a Lead-role `codevis_graph` server
+in the project's `.codex/config.toml`. No global Codex configuration is changed,
+and the Codex CLI does not need to be installed during setup. Claude Code still
+uses `.mcp.json`; Codex does not use that file for project MCP registration.
+
+For an existing project, run `npx codevis init -y` to keep the saved CodeVis
+configuration and add the missing integration. In a CodeVis source checkout,
+use `node bin/codevis.mjs init -y` instead.
+
+Codex loads project configuration only for trusted projects. Open/trust the
+project in Codex and restart the app, IDE extension, or CLI session. From that
+project directory, check `codex mcp get codevis_graph`; in a new agent session,
+call `get_workspace_identity` and verify the project root before using graph tools.
+See the [official Codex MCP documentation](https://developers.openai.com/codex/mcp/).
+
+The generated entry uses absolute paths to the local Node executable, installed
+CodeVis launcher, and project root. Treat it as machine-local configuration;
+exclude it from version control if it contains only local settings. Run init on
+each machine. Existing `codevis_graph` entries are preserved verbatim, including
+custom commands, disabled state and tool restrictions. To regenerate a stale
+entry after moving a project, remove only `mcp_servers.codevis_graph` and its
+subtables, then rerun init. Other servers, comments and settings are preserved.
+
+Invalid TOML stops setup with an actionable error without replacing the file.
+If `mcp_servers` is an inline table that cannot be extended, convert it to
+`[mcp_servers.<name>]` sections and rerun init. Project trust and agent approval
+settings remain under your control; init does not change them.
+
 ## The two databases
 
 - `project_db` contains project code and that project's Tasks, Epics, Knowledge
@@ -171,14 +201,21 @@ schema or `sourceDir` changes.
 
 ## Dashboard workflow
 
-- **Kanban:** create, edit and move Tasks/Epics; inspect locks.
-- **Context:** search/sort Knowledge, Epics and Tasks, then show or inspect them.
+Use the section menu (Work, Analyze, Model, System), then pick a view.
+**Work → CodeFlow** connects a request to requirements, tests, Tasks and review.
+See [Using CodeFlow](CHANGES_GUIDE.md) for a practical walkthrough.
+Kanban is labelled **Task board**, Brain is **Ideas**, Context is **Knowledge**,
+and Explore is **Queries** in the navigation; their underlying tools are unchanged.
+
+
+- **Task board:** create, edit and move Tasks/Epics; inspect locks.
+- **Knowledge:** search/sort Knowledge, Epics and Tasks, then show or inspect them.
 - **Inspector:** source, properties and all relationships of the selected node;
   start an A→Z route and review proposed semantic annotations here.
 - **Pathfinder:** walk callers/callees or choose a destination and find a bounded
   shortest route using `CALLS`, conditional calls and optionally `RENDERS`.
-- **Explore:** predefined scans and read-only Cypher.
-- **Spec / Diagrams:** import PlantUML/WSD and connect design nodes to code.
+- **Queries:** predefined scans and read-only Cypher.
+- **Specs / Diagrams:** import PlantUML/WSD and connect design nodes to code.
 - **Settings:** database, graph detail, node budget, source paths and layout.
 
 Diagram replacement is a single database transaction: a failed import keeps the

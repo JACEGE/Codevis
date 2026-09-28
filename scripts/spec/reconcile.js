@@ -3,7 +3,7 @@
  *
  * Given the parsed sequence-diagram messages, the confirmed participant→code
  * bindings, the functions in each bound scope, and the ACTUAL CALLS edges
- * among those functions (all fetched from Neo4j by the handler), compute the
+ * among those functions (all fetched from the graph by the handler), compute the
  * three overlay regions:
  *
  *   ① conforms — message has a matching CALLS edge in the code        (green)
@@ -18,7 +18,7 @@
  *   - SCOPING: region ③ is computed ONLY among functions that belong to bound
  *     participants. Calls leaving that scope are the normal case, not findings.
  *
- * Pure function — no Neo4j, no I/O.
+ * Pure function — no database access, no I/O.
  */
 
 "use strict";

@@ -1,3 +1,4 @@
+import { WORKFLOW_STYLES, workflowType } from './graph/workflowShapes.js';
 /**
  * Die EINE Farbtabelle für Knotentypen.
  *
@@ -23,6 +24,7 @@ export const SPEC_LABELS = [
 export const SPEC_LABEL_SET = new Set(SPEC_LABELS);
 
 export const NODE_COLORS = {
+    ...Object.fromEntries(Object.entries(WORKFLOW_STYLES).map(([label,style])=>[label,style.color])),
     Function: '#0ea5e9',    // sky blue
     Component: '#8b5cf6',   // violet
     Class: '#f97316',       // orange
@@ -114,6 +116,10 @@ export function colorForLabel(label, palette = NODE_COLORS) {
  */
 export function colorForNode(node, palette = NODE_COLORS) {
     const labels = node?.labels || [];
+    if(workflowType(labels)) {
+        const statusColor={active:'#f59e0b',complete:'#34d399',done:'#34d399',pending:'#94a3b8',blocked:'#f87171',error:'#f87171'}[node.status];
+        if(statusColor)return statusColor;
+    }
     for (const l of labels) if (palette[l]) return palette[l];
     for (const l of labels) if (NODE_COLORS[l]) return NODE_COLORS[l];
     // Ein Knowledge-Knoten trägt seine Kategorie ('architecture', 'testing', …)
@@ -259,7 +265,7 @@ const DISPLAY_NAMES = {
 };
 
 export function displayNameForLabel(label) {
-    return DISPLAY_NAMES[label] || label;
+    return WORKFLOW_STYLES[label]?.name || DISPLAY_NAMES[label] || label;
 }
 
 // Typen, die beim ersten Laden AUS sind. Das ist keine Geschmacksfrage,

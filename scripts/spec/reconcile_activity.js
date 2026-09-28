@@ -11,7 +11,7 @@
  *   extra    — the process calls a function that no action covers (scoped to
  *              the process's direct callees)
  *
- * Pure function — no Neo4j, no I/O.
+ * Pure function — no database access, no I/O.
  */
 
 "use strict";

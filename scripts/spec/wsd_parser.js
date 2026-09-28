@@ -3,7 +3,7 @@
  * sequence diagrams.
  *
  * Turns sequence-diagram text into a normalized object describing the
- * participants and the ordered messages between them. NO Neo4j, NO I/O —
+ * participants and the ordered messages between them. NO database access, NO I/O —
  * pure functions only, so it is trivially unit-testable and never starts a
  * build when required (same discipline as scripts/graph_builder.js helpers).
  *

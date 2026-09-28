@@ -6,9 +6,10 @@ const path = require('node:path');
 require('../lib/tsx-userinfo-preload.cjs');
 require('tsx/cjs/api').register();
 const { commitFileSnapshots, replaceFileSnapshot } = require('../tools/lib/edit-transaction.ts');
+const { SKIP_WITHOUT_FILE_SYMLINKS } = require('./helpers/symlinks.cjs');
 
 for (const kind of ['single', 'batch']) {
-    test(`${kind} replacement preserves a file symlink and edits its target`, async t => {
+    test(`${kind} replacement preserves a file symlink and edits its target`, { skip: SKIP_WITHOUT_FILE_SYMLINKS }, async t => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codevis-snapshot-link-'));
         t.after(() => fs.rmSync(root, { recursive: true, force: true }));
         const target = path.join(root, 'actual.js'), alias = path.join(root, 'alias.js');

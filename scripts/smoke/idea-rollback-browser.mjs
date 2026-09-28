@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import puppeteer from 'puppeteer';
+import { selectDashboardView } from './dashboard-navigation.mjs';
 
 const browser = await puppeteer.launch({ headless: true, args: ['--enable-unsafe-swiftshader'] });
 try {
@@ -16,11 +17,7 @@ try {
     });
     await page.goto(process.argv[2] || 'http://localhost:4362', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.workspace-header');
-    await page.evaluate(() => {
-        const button = [...document.querySelectorAll('.workspace-header button')].find(node => node.textContent.trim() === 'Kanban');
-        if (!button) throw new Error('Kanban tab missing');
-        button.click();
-    });
+    await selectDashboardView(page, 'Task board');
     // The first priority select belongs to the composer; the second is a real idea.
     await page.waitForFunction(() => document.querySelectorAll('select[aria-label="Priority"]').length > 1);
     const select = (await page.$$('select[aria-label="Priority"]'))[1];

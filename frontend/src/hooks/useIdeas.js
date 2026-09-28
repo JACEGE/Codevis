@@ -12,6 +12,7 @@ export default function useIdeas({ db, onError }) {
     const [ideas, setIdeas] = useState([]);
     const [newIdeaText, setNewIdeaText] = useState('');
     const [newIdeaIntent, setNewIdeaIntent] = useState([]);
+    const [newIdeaKind,setNewIdeaKind]=useState('feature');
     const [newIdeaPriority, setNewIdeaPriority] = useState('');
     const [editingIdeaId, setEditingIdeaId] = useState(null);
     const [editingIdeaText, updateEditingIdeaText] = useState('');
@@ -30,7 +31,7 @@ export default function useIdeas({ db, onError }) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    content,
+                    content, kind:newIdeaKind,
                     createdBy: 'user',
                     intent: newIdeaIntent,
                     priority: newIdeaPriority,
@@ -40,7 +41,7 @@ export default function useIdeas({ db, onError }) {
         } catch (error) {
             if (workspace === lifetime.current) onError(`Idea could not be created: ${error.message}`);
         }
-    }, [db, newIdeaIntent, newIdeaPriority, newIdeaText, onError]);
+    }, [db, newIdeaKind, newIdeaIntent, newIdeaPriority, newIdeaText, onError]);
 
     const patchIdea = useCallback(async (ideaId, patch) => {
         const workspace = lifetime.current;
@@ -119,7 +120,7 @@ export default function useIdeas({ db, onError }) {
 
     return {
         ideas, setIdeas,
-        newIdeaText, setNewIdeaText,
+        newIdeaText, setNewIdeaText, newIdeaKind, setNewIdeaKind,
         newIdeaIntent, setNewIdeaIntent,
         newIdeaPriority, setNewIdeaPriority,
         editingIdeaId, editingIdeaText, setEditingIdeaText,

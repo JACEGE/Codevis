@@ -143,3 +143,39 @@ test('exported declarations synchronize once and create one task provenance edge
     assert.equal(result.records.length, 1);
     assert.ok(await syncFileToGraph(h.file, 'app.js', '.js', h.driver));
 });
+
+test('detailed sync skips unsupported and deleted files with a reason and classifies syntax errors', async t => {
+    const { syncFileToGraphDetailed } = require('../tools/lib/graph-sync.ts');
+    const h = await fixture(t);
+    const docs = path.join(path.dirname(h.file), 'notes.md');
+    fs.writeFileSync(docs, '# notes');
+    const unsupported = await syncFileToGraphDetailed(docs, 'notes.md', '.md', h.driver);
+    assert.deepEqual([unsupported.ok, unsupported.skipped, unsupported.code], [false, true, 'UNSUPPORTED_EXTENSION']);
+    assert.match(unsupported.reason, /\.md/);
+    const missing = await syncFileToGraphDetailed(path.join(path.dirname(h.file), 'gone.js'), 'gone.js', '.js', h.driver);
+    assert.deepEqual([missing.ok, missing.skipped, missing.code], [false, true, 'FILE_MISSING']);
+    fs.writeFileSync(h.file, 'function {');
+    const broken = await syncFileToGraphDetailed(h.file, 'app.js', '.js', h.driver);
+    assert.deepEqual([broken.ok, !!broken.skipped, broken.code], [false, false, 'SYNTAX_ERROR']);
+    fs.writeFileSync(h.file, 'function work() { return 1; }');
+    assert.equal((await syncFileToGraphDetailed(h.file, 'app.js', '.js', h.driver)).ok, true);
+});
+
+test('a file that changes while being read is retried instead of failing', async t => {
+    const { syncFileToGraphDetailed } = require('../tools/lib/graph-sync.ts');
+    const h = await fixture(t);
+    fs.writeFileSync(h.file, 'function work() { return 1; }');
+    const realStat = fs.statSync;
+    let calls = 0;
+    // Report a moved mtime on the second stat of the first attempt only.
+    fs.statSync = (target, ...rest) => {
+        const stats = realStat(target, ...rest);
+        if (target === h.file && ++calls === 2) return { ...stats, mtimeMs: stats.mtimeMs + 5 };
+        return stats;
+    };
+    try {
+        const outcome = await syncFileToGraphDetailed(h.file, 'app.js', '.js', h.driver);
+        assert.equal(outcome.ok, true);
+        assert.ok(calls >= 4, 'the sync must have been attempted twice');
+    } finally { fs.statSync = realStat; }
+});

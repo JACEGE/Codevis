@@ -36,8 +36,8 @@ test('dashboard assets and the published package use the same release version', 
   assert.equal(frontendPkg.version, pkg.version);
 });
 
-test('active public guides ship without internal instructions or dated review archives', () => {
-  assert.equal(pkg.files.includes('AGENTS.md'), false);
+test('active guides and agent instructions ship without dated review archives', () => {
+  assert.ok(pkg.files.includes('AGENTS.md'));
   assert.ok(pkg.files.includes('docs/*.md'));
   assert.equal(pkg.files.includes('docs/reviews/'), false);
   assert.equal(pkg.files.includes('docs/benchmarks/'), false);

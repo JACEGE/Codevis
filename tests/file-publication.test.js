@@ -6,6 +6,7 @@ const os = require('node:os');
 const vm = require('node:vm');
 const ts = require('typescript');
 const { resolvePhysicalPath, publishStagedFile } = require('../lib/file-publication.cjs');
+const { SKIP_WITHOUT_FILE_SYMLINKS } = require('./helpers/symlinks.cjs');
 
 function fixture(t) {
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codevis-publication-')));
@@ -56,7 +57,7 @@ test('publication supports a genuinely new destination', t => {
     assert.equal(fs.readFileSync(h.target, 'utf8'), 'edited');
 });
 
-test('publication refuses a destination changed into a symbolic link', t => {
+test('publication refuses a destination changed into a symbolic link', { skip: SKIP_WITHOUT_FILE_SYMLINKS }, t => {
     const h = fixture(t);
     const other = path.join(h.root, 'other.js');
     fs.renameSync(h.target, other); fs.symlinkSync(other, h.target, 'file');
@@ -78,7 +79,7 @@ test('publication refuses a parent directory redirected after staging', t => {
     assert.equal(fs.readFileSync(path.join(other, 'file.js'), 'utf8'), 'other original');
 });
 
-test('a dangling symbolic link cannot be mistaken for a new destination', t => {
+test('a dangling symbolic link cannot be mistaken for a new destination', { skip: SKIP_WITHOUT_FILE_SYMLINKS }, t => {
     const h = fixture(t);
     const link = path.join(h.root, 'dangling.js');
     fs.symlinkSync(path.join(h.root, 'missing.js'), link, 'file');

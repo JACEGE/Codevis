@@ -6,6 +6,7 @@ import { promisify } from "util";
 import { createRequire } from "module";
 
 const execFileAsync = promisify(execFile);
+let runBuilder: (file: string, args: string[], options: any) => Promise<{ stdout: string; stderr: string }> = execFileAsync as any;
 let isUpdateRunning = false;
 
 const __filename = fileURLToPath(import.meta.url);
@@ -41,66 +42,104 @@ const samePath = (a: unknown, b: unknown) => {
     return norm(a) === norm(b);
 };
 
+const DEFAULT_GRAPH_UPDATE_TIMEOUT_MS = 10 * 60 * 1000;
+const GRAPH_UPDATE_RETRY_AFTER_MS = 30 * 1000;
+
+function graphUpdateTimeoutMs() {
+    const configured = Number(process.env.CODEVIS_GRAPH_UPDATE_TIMEOUT_MS);
+    return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_GRAPH_UPDATE_TIMEOUT_MS;
+}
+
+/** A concurrent build is normal operation: report it without isError so agents do not treat it as a failure. */
+function graphUpdateBusy(reason: string) {
+    return {
+        content: [{ type: "text", text: JSON.stringify({
+            status: "BUSY",
+            retryAfterMs: GRAPH_UPDATE_RETRY_AFTER_MS,
+            message: `${reason} The running build will include current file changes. Retrying is optional; do not poll in a loop.`,
+        }) }],
+    };
+}
+
 const handlers: Record<string, ToolHandler> = {
     update_graph_smart: async (args, _ctx) => {
-        if (isUpdateRunning) {
-            return {
-                content: [{ type: "text", text: "Error: Graph update is still running. Not finished yet." }],
-                isError: true,
-            } as any;
-        }
-
-        isUpdateRunning = true;
         let target: string;
         try {
             target = normalizeWorkspaceName(args?.target);
         } catch {
-            isUpdateRunning = false;
             return {
                 content: [{ type: "text", text: "Error: Invalid target. Use 'project_db' or 'codevis_db'." }],
                 isError: true,
             } as any;
         }
+        if (isUpdateRunning) return graphUpdateBusy("A graph update started by this MCP server is still running.");
 
-        if (target === "target") {
-            let projectConfig: any;
+        isUpdateRunning = true;
+        try {
+            if (target === "target") {
+                let projectConfig: any;
+                try {
+                    projectConfig = paths.loadConfig();
+                } catch (error: any) {
+                    return {
+                        content: [{ type: "text", text: `Error reading CodeVis configuration: ${error.message}` }],
+                        isError: true,
+                    } as any;
+                }
+                if (projectConfig.workMode === "planning") {
+                    return {
+                        content: [{ type: "text", text: "Skipped: this project is in planning mode, so no code graph is built. Switch after code exists with `codevis init code [--source <paths>]`." }],
+                    };
+                }
+            }
+
+            // For "meta": run against CodeVis package itself (self-analysis)
+            // For "tool": run against the target project (using its config)
+            const graphBuilder = resolve(PACKAGE_ROOT, "scripts/graph_builder.js");
+            const targetName = target === "meta" ? "meta" : "target";
+            const cwd = PROJECT_ROOT;
+
             try {
-                projectConfig = paths.loadConfig();
-            } catch (error: any) {
-                isUpdateRunning = false;
+                const { stdout, stderr } = await runBuilder(process.execPath, [graphBuilder, targetName, "diff"], {
+                    cwd,
+                    maxBuffer: 1024 * 1024 * 10,
+                    timeout: graphUpdateTimeoutMs(),
+                    env: { ...process.env, CODEVIS_PROJECT_DIR: cwd },
+                });
                 return {
-                    content: [{ type: "text", text: `Error reading CodeVis configuration: ${error.message}` }],
+                    content: [{ type: "text", text: `Update finished successfully.
+
+STDOUT:
+${stdout}
+
+STDERR:
+${stderr}` }],
+                };
+            } catch (error: any) {
+                const output = `${error?.message || ""}
+${error?.stdout || ""}
+${error?.stderr || ""}`;
+                // The builder holds a cross-process lock; a watcher or another
+                // client may own it. That is a busy signal, not a failure.
+                if (/Another CodeVis build is already running/i.test(output)) {
+                    return graphUpdateBusy("Another CodeVis graph build (watcher or other client) is running.");
+                }
+                if (error?.killed || error?.signal) {
+                    return {
+                        content: [{ type: "text", text: JSON.stringify({
+                            status: "TIMEOUT",
+                            message: `Graph update did not finish within ${Math.round(graphUpdateTimeoutMs() / 1000)} s and was stopped. The graph keeps its previous state. Do not loop on this tool; continue without the refresh or report it.`,
+                        }) }],
+                        isError: true,
+                    } as any;
+                }
+                return {
+                    content: [{ type: "text", text: `Error executing update: ${error.message}
+${error.stdout ? "STDOUT: " + error.stdout : ""}
+${error.stderr ? "STDERR: " + error.stderr : ""}` }],
                     isError: true,
                 } as any;
             }
-            if (projectConfig.workMode === "planning") {
-                isUpdateRunning = false;
-                return {
-                    content: [{ type: "text", text: "Skipped: this project is in planning mode, so no code graph is built. Switch after code exists with `codevis init code [--source <paths>]`." }],
-                };
-            }
-        }
-
-        // For "meta": run against CodeVis package itself (self-analysis)
-        // For "tool": run against the target project (using its config)
-        const graphBuilder = resolve(PACKAGE_ROOT, "scripts/graph_builder.js");
-        const targetName = target === "meta" ? "meta" : "target";
-        const cwd = PROJECT_ROOT;
-
-        try {
-            const { stdout, stderr } = await execFileAsync(process.execPath, [graphBuilder, targetName, "diff"], {
-                cwd,
-                maxBuffer: 1024 * 1024 * 10,
-                env: { ...process.env, CODEVIS_PROJECT_DIR: cwd },
-            });
-            return {
-                content: [{ type: "text", text: `Update finished successfully.\n\nSTDOUT:\n${stdout}\n\nSTDERR:\n${stderr}` }],
-            };
-        } catch (error: any) {
-            return {
-                content: [{ type: "text", text: `Error executing update: ${error.message}\n${error.stdout ? "STDOUT: " + error.stdout : ""}\n${error.stderr ? "STDERR: " + error.stderr : ""}` }],
-                isError: true,
-            } as any;
         } finally {
             isUpdateRunning = false;
         }
@@ -234,3 +273,10 @@ const definitions = [
 ];
 
 export const bridgeTools: ToolModule = { definitions, handlers };
+
+/** Test seam: replace the builder process runner. Returns a restore function. */
+export function __setGraphBuilderRunnerForTests(runner: typeof runBuilder) {
+    const previous = runBuilder;
+    runBuilder = runner;
+    return () => { runBuilder = previous; };
+}

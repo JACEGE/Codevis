@@ -18,6 +18,23 @@ The embedded storage files keep their historical names (`ladybug-target` and
 `ladybug-meta`). They are implementation details, and retaining them avoids a
 risky data/WAL migration for existing projects.
 
+## Embedded database configuration
+
+CodeVis uses Ladybug exclusively. New configurations contain source and workflow
+settings under `workspaces.project_db` and `workspaces.codevis_db`; no `dbUri`,
+`neo4jUri`, `auth`, or database URI/password environment variables are required.
+Internal callers open `ladybug.workspace(name)`. Unknown names fail immediately.
+
+Existing configuration files and legacy workspace aliases still load. Obsolete
+connection fields can be removed; they no longer select the database in CodeVis.
+Init preserves existing user configuration rather than rewriting it automatically.
+The local database paths and stored Tasks, Knowledge, Specs and Flows are unchanged.
+
+The active driver/record API and Cypher translator are Ladybug infrastructure,
+not a second backend. A legacy `driver(uri, auth)` entry point remains for older
+integrations and tests. The standalone Neo4j import script has been removed;
+historical versions remain available in Git history.
+
 ## Dashboard selection and project identity
 
 `codevis dashboard --db codevis_db` selects that workspace. If a dashboard

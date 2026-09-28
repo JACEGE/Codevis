@@ -16,11 +16,7 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 const { normalizeWorkspaceName, publicWorkspaceName } = require('../lib/workspace-names.cjs');
 const { subscribeWorkspace, emitWorkspace } = require('./workspace-events.cjs');
-// DB backend: embedded Ladybug through the
-// Compat-Client, der den Daemon selbst spawnt. Es gibt kein zweites Backend
-// mehr — der frühere CODEVIS_DB=neo4j-Opt-in ist entfernt.
-// The variable stays `ladybug` because it IS the driver API surface the compat
-// client implements; renaming it is a separate mechanical pass.
+// Embedded Ladybug is the only database backend.
 const BACKEND_NAME = 'Ladybug';
 const ladybug = require('./ladybug-driver.cjs');
 const { spawn } = require('child_process');
@@ -114,12 +110,7 @@ app.post('/api/impact', async (req, res) => {
 // Node labels produced by the diagram importer (scripts/spec/spec_db.cjs).
 // Kept in one place: this list is both the graph query's allowlist and the
 // source of the synthetic 'Spec' aggregator label the UI filters on.
-const SPEC_LABELS = [
-    'SpecClassDiagram', 'SpecClass', 'SpecMethod', 'SpecField', 'SpecRelation',
-    'SpecSequence', 'SpecParticipant', 'SpecMessage',
-    'SpecUseCaseDiagram', 'SpecUseCase', 'SpecActor', 'SpecAssoc',
-    'SpecActivityDiagram', 'SpecProcess', 'SpecAction',
-];
+const { SPEC_LABELS, levelLabels, levelEdgeTypes } = require('./graph-levels.cjs');
 const SPEC_LABEL_SET = new Set(SPEC_LABELS);
 
 /**
@@ -283,7 +274,7 @@ function resetChangeDetectorSnapshots() {
 function createDriver(dbKey) {
     const ws = config.workspaces[dbKey];
     if (!ws) throw new Error(`Unknown workspace: ${dbKey}`);
-    return ladybug.driver((ws.dbUri || ws.neo4jUri), ladybug.auth.basic(ws.auth.user, ws.auth.pass));
+    return ladybug.workspace(dbKey);
 }
 
 async function switchDb(dbKey) {
@@ -351,57 +342,6 @@ let graphScope = {
 
 // Labels the level asks for, expressed as bare label names (no `n:` prefix) so
 // they can be matched against a census and against the filter's hidden list.
-function levelLabels(level) {
-    const labels = [
-        'Function', 'Component', 'Class', 'State',
-        'Module', 'Endpoint', 'File', 'Task', 'Epic', 'Knowledge', 'Annotation',
-        'Effect', 'DOMElement', 'Topic', 'Service', 'Action',
-        'BraindumpSession',
-        // Ideen gehören zur Planungsebene wie Task, Epic und Knowledge — sie
-        // fehlten hier als einzige, obwohl die Palette im Frontend längst eine
-        // Farbe und einen Filtereintrag für sie hat. Im Graphen kamen sie
-        // damit überhaupt nicht vor.
-        'Idea',
-        // Imported diagrams. Without these the spec layer exists in the DB but
-        // never reaches the main graph, so DERIVES/REALIZED_BY edges have no
-        // endpoints and drop out — spec and code look like separate worlds.
-        // The frontend hides the layer by default (GraphFilter 'Spec').
-        ...SPEC_LABELS,
-    ];
-    if (level >= 2) {
-        // Level 2 — meaningful atomic nodes.
-        // Intentionally EXCLUDES raw ASTNode (~21k): force layout collapses
-        // them into a clump. See memory: "Render-Kollision".
-        labels.push(
-            'Variable', 'ReturnValue', 'ControlFlow', 'ReturnStatement',
-            'ContinueStatement', 'BreakStatement', 'ThrowStatement'
-        );
-    }
-    // Level 3 — full AST parse (noise tier; use with caution).
-    if (level >= 3) labels.push('ASTNode');
-    return labels;
-}
-
-function levelEdgeTypes(level) {
-    const edgeTypes = [
-        'CALLS', 'RENDERS', 'IMPORTS', 'HANDLES', 'FETCHES', 'CONTAINS',
-        'READS_STATE', 'WRITES_STATE', 'RETURNS', 'AFFECTS', 'APPLIES_TO', 'ANNOTATES', 'REFERENCES',
-        'AWAITS', 'HAS_EFFECT', 'DATA_FLOWS_TO', 'CALLS_CONDITIONALLY',
-        'BELONGS_TO', 'USES_TOPIC', 'PUBLISHES_TOPIC', 'SUBSCRIBES_TOPIC',
-        'PROVIDES_SERVICE', 'CALLS_SERVICE', 'PROVIDES_ACTION', 'USES_ACTION',
-        'WATCHES', 'ON_EVENT', 'PASSES_CALLBACK',
-        'DECLARES', 'CONTAINS_FLOW', 'CONTAINS_STMT', 'DERIVES', 'INSTANTIATES',
-        // Diagram structure, and the one edge that ties a diagram to the code
-        // that implements it.
-        'INHERITS', 'SPEC_RELATES', 'REALIZED_BY',
-        // Epic → Task. Without it an Epic loads as a node nothing points at,
-        // which is the one thing an Epic never is.
-        'FULFILLED_BY',
-    ];
-    if (level >= 3) edgeTypes.push('CONTAINS_AST');
-    return edgeTypes;
-}
-
 /**
  * Whether this workspace's database carries the builder's stored `degree`.
  *
@@ -704,6 +644,7 @@ async function readCandidateSet(session, level, key) {
                 id,
                 name: displayName,
                 file: r.get('file') || r.get('path'),
+                isTest: require('../scripts/test-file.cjs').isTestPath(r.get('file') || r.get('path')),
                 ipv6: r.get('ipv6'),
                 labels,
                 params: r.get('params'),
@@ -1128,7 +1069,7 @@ function setupTerminalWebSocket(httpServer) {
 async function getDebugPaths(startNodeId, direction = 'out') {
     const session = driver.session();
     try {
-        // Reachable-set form (Kuzu + Neo4j): collect every node within 6 hops of
+        // Reachable-set query: collect every node within 6 hops of
         // the start, plus each node's DIRECT CALLS/RENDERS child as (node→childId)
         // rows; the tree is then assembled in JS below. Avoids path-chain array
         // indexing (Kuzu lists are 1-based / variable indices unsupported) and the
@@ -2223,7 +2164,8 @@ const NODE_DETAIL_EDGE_CAP = 1200;
 // Listed positively rather than as an exclusion: Kuzu has no "all types except"
 // syntax in a rel pattern, and an allowlist also fixes the order in which the
 // row cap is spent.
-const DETAIL_REL_TYPES = [
+const DETAIL_REL_TYPES = [...new Set([
+    ...require('../lib/workflow/model.cjs').RELATIONS,
     'CALLS', 'CALLS_CONDITIONALLY', 'RENDERS', 'INHERITS', 'INSTANTIATES',
     'USES_TYPE', 'DECORATED_BY', 'PASSES_PROP', 'PASSES_CALLBACK', 'DATA_FLOWS_TO',
     'RETURNS', 'AWAITS', 'ASYNC_CHAIN', 'FETCHES', 'HANDLES', 'ON_EVENT',
@@ -2237,7 +2179,7 @@ const DETAIL_REL_TYPES = [
     'TRIGGERS', 'TRIGGERS_LEAF', 'TRIGGERS_RENDER', 'CLICKS_ON', 'CLICKED_ELEMENT',
     'RUNTIME_RENDERS', 'EXECUTION_STEP', 'EXECUTION_NEXT', 'MAPS_TO', 'MAPS_TO_STATIC',
     'SHOWS', 'HAS_CHILD', 'LOG_OF',
-].join('|');
+])].join('|');
 
 // Rel properties worth surfacing, with the label the UI puts in front of them.
 // Anything null on a given edge is dropped, so an edge type that does not carry
@@ -2446,7 +2388,7 @@ async function nodeDetail(dbKey, nodeId) {
                    n.workInstructions AS workInstructions,
                    n.assignedTo AS assignedTo, n.summary AS summary,
                    n.category AS category, n.content AS content, n.sourcePath AS sourcePath,
-                   n.msgType AS msgType, n.rosKind AS rosKind, n.rosNodeName AS rosNodeName
+                   n.msgType AS msgType, n.rosKind AS rosKind, n.rosNodeName AS rosNodeName, n.result AS workflowData, n.revision AS revision
         `, { nodeId: String(nodeId) });
 
         if (nodeResult.records.length === 0) return null;
@@ -2455,10 +2397,8 @@ async function nodeDetail(dbKey, nodeId) {
         const labels = (r.get('labels') || []).map(String);
         const node = {
             id: String(r.get('id')),
-            labels,
-            name: (labels.includes('Task') || labels.includes('Epic'))
-                ? (r.get('title') || r.get('name'))
-                : r.get('name'),
+            labels, workflowData:r.get('workflowData'), revision:r.get('revision'),
+            name: displayNameFor({name:r.get('name'),title:r.get('title'),kind:r.get('kind'),label:labels[0],uid:String(r.get('id')),path:r.get('path'),content:r.get('content')}),
             file: r.get('file') || r.get('path') || null,
             ipv6: r.get('ipv6'), uid: r.get('uid'),
             signature: r.get('signature'), params: r.get('params'),
@@ -2691,18 +2631,8 @@ app.use('/docs/screenshots', express.static(
 ));
 app.use('/docs/screenshots', (_req, res) => res.status(404).type('text').send('Not found'));
 
-// Serve only the documentation that ships in the package. Keeping the allowlist
-// outside the route makes path traversal impossible and independently testable.
-app.get('/api/docs', (req, res) => {
-    try {
-        const { readDocumentationFile } = require('./documentation-files.cjs');
-        const document = readDocumentationFile(path.resolve(__dirname, '..'), req.query.file);
-        res.set('X-CodeVis-Document', document.relative);
-        res.type('text/markdown').send(document.markdown);
-    } catch (err) {
-        res.status(err.status || 500).json({ error: err.message });
-    }
-});
+// Fixed packaged guides; request parameters cannot select arbitrary files.
+require('./documentation-routes.cjs').registerDocumentationRoutes(app, path.resolve(__dirname, '..'));
 
 // Pulse control
 app.post('/api/pulse/start', (req, res) => {
@@ -3427,19 +3357,32 @@ app.get('/api/ros/diagram', async (req, res) => {
 app.get('/api/diagram/class', async (req, res) => {
     const session = getTaskDriver(resolveSpecDb(req.query.db).ws).session();
     try {
+        // Dashboard defaults: readable first. 'auto' switches off uses arrows,
+        // hides isolated classes and groups by directory once a diagram has
+        // more than ~40 classes; the resolved values come back in `options`.
+        const q = req.query;
+        const tri = (v, def) => (v === 'true' ? true : v === 'false' ? false : v === 'auto' ? 'auto' : def);
+        const num = (v, def) => (v !== undefined && v !== '' && Number.isFinite(Number(v)) ? parseInt(v, 10) : def);
         const opts = {
-            pathPrefix: req.query.pathPrefix || null,
-            includeMethods: req.query.includeMethods !== 'false',
-            maxMethods: req.query.maxMethods ? parseInt(req.query.maxMethods, 10) : 12,
-            includeUses: req.query.includeUses !== 'false',
-            includeTests: req.query.includeTests !== 'false',
-            onlyConnected: req.query.onlyConnected === 'true',
-            title: req.query.title || 'Class Diagram',
+            pathPrefix: q.pathPrefix || null,
+            includeMethods: q.includeMethods !== 'false',
+            maxMethods: num(q.maxMethods, 6),
+            maxAttributes: num(q.maxAttributes, 6),
+            memberVisibility: q.memberVisibility === 'all' ? 'all' : 'public',
+            includeUses: tri(q.includeUses, 'auto'),
+            minUseCalls: q.minUseCalls === undefined || q.minUseCalls === 'auto' ? 'auto' : num(q.minUseCalls, 1),
+            maxUses: num(q.maxUses, 80),
+            includeTests: q.includeTests !== 'false',
+            onlyConnected: tri(q.onlyConnected, 'auto'),
+            groupByDirectory: tri(q.groupByDirectory, 'auto'),
+            compact: q.compact === 'true',
+            title: q.title || 'Class Diagram',
         };
         const model = await classDiagram.readClassModel(session, opts);
         res.json({
             ok: true,
             stats: model.stats,
+            options: { ...model.options, compact: opts.compact },
             plantuml: classDiagram.renderClassDiagram(model, { ...opts, format: 'plantuml' }),
             mermaid: classDiagram.renderClassDiagram(model, { ...opts, format: 'mermaid' }),
             classes: model.classes,
@@ -3464,7 +3407,7 @@ async function publishBrainResult({ chat_id, runId, summary, nodeIds, db = 'meta
     try {
         // Step 1 — nodes (match by taskId for Tasks, by name for Knowledge etc.).
         // Top-level id()/labels()/type() mirror loadGraphData's proven Ladybug
-        // idiom — NOT startNode()/endNode() (Neo4j-only, missing in Kuzu).
+        // idiom — NOT startNode()/endNode() (unsupported by the embedded database).
         const nodeRes = await session.run(
             `MATCH (n) WHERE n.taskId IN $ids OR n.name IN $ids
              RETURN elementId(n) AS id, n.title AS title, n.name AS name, labels(n) AS labels,
@@ -3764,6 +3707,10 @@ app.get('/api/context', async (req, res) => {
     } finally {
         await session.close();
     }
+});
+
+require('./workflow-routes.cjs').registerWorkflowRoutes(app, { getDriver: getTaskDriver,
+    isConfigured: db => Boolean(config.workspaces[db]), onChange: db => { invalidateCandidateCache('workflow changed'); io.emit('workflow:changed', { db }); },
 });
 
 app.get('/api/epics', async (req, res) => {
@@ -4412,7 +4359,8 @@ app.post('/api/tasks', async (req, res) => {
 // trägt die Intent-Liste (kommagetrennt, bei Ideen sonst leer), `priority` die
 // Stufe. Eine neue Spalte hätte eine Schema-Migration der CodeNode-Tabelle
 // bedeutet, und die Liste ist bei Ideen kurz genug für einen String.
-const IDEA_INTENTS = ['task', 'epic', 'knowledge'];
+const IDEA_INTENTS = ['task', 'epic', 'knowledge', 'epic-tasks', 'codeflow'];
+const IDEA_KINDS = require('../lib/workflow/templates.cjs').KINDS;
 const IDEA_PRIORITIES = ['critical', 'high', 'medium', 'low'];
 
 function normalizeIntent(value) {
@@ -4445,13 +4393,13 @@ app.get('/api/ideas', async (req, res) => {
                 ? `MATCH (i:Idea)
                    RETURN i.taskId AS ideaId, i.content AS content,
                           i.status AS status, i.createdBy AS createdBy,
-                          i.category AS intent, i.priority AS priority,
+                          i.category AS intent, i.kind AS kind, i.priority AS priority,
                           i.createdAt AS createdAt
                    ORDER BY i.createdAt`
                 : `MATCH (i:Idea) WHERE i.status = 'open'
                    RETURN i.taskId AS ideaId, i.content AS content,
                           i.status AS status, i.createdBy AS createdBy,
-                          i.category AS intent, i.priority AS priority,
+                          i.category AS intent, i.kind AS kind, i.priority AS priority,
                           i.createdAt AS createdAt
                    ORDER BY i.createdAt`
         );
@@ -4471,7 +4419,8 @@ app.get('/api/ideas', async (req, res) => {
 });
 
 app.post('/api/ideas', async (req, res) => {
-    const { content, createdBy, intent, priority } = req.body || {};
+    const { content, createdBy, intent, priority, kind } = req.body || {};
+    if(kind!=null&&!IDEA_KINDS.includes(kind))return res.status(400).json({error:'Unknown idea kind'});
     if (!content || !content.trim()) return res.status(400).json({ error: 'content required' });
     const storedIntent = normalizeIntent(intent) || '';
     const storedPriority = normalizePriority(priority) || '';
@@ -4483,17 +4432,17 @@ app.post('/api/ideas', async (req, res) => {
                 taskId: $ideaId, name: $ideaId,
                 content: $content, status: 'open',
                 createdBy: $createdBy,
-                category: $intent, priority: $priority,
+                category: $intent, kind:$kind, priority: $priority,
                 createdAt: timestamp(), updatedAt: timestamp()
             })`,
             {
                 ideaId, content: content.trim(), createdBy: createdBy || 'user',
-                intent: storedIntent, priority: storedPriority,
+                intent: storedIntent, kind:kind||null, priority: storedPriority,
             }
         );
         const idea = {
             ideaId, content: content.trim(), status: 'open', createdBy: createdBy || 'user',
-            intent: intentToList(storedIntent), priority: storedPriority,
+            intent: intentToList(storedIntent), kind:kind||null, priority: storedPriority,
         };
         if (io) emitWorkspace(io, session.workspace, 'idea:created', idea);
         res.json(idea);
@@ -4509,11 +4458,12 @@ app.post('/api/ideas', async (req, res) => {
 // mitschicken müssen, den die Karte gerade gar nicht im Zustand hat.
 app.patch('/api/ideas/:ideaId', async (req, res) => {
     const { ideaId } = req.params;
-    const { content, intent, priority } = req.body || {};
+    const { content, intent, priority, kind } = req.body || {};
+    if(kind!=null&&!IDEA_KINDS.includes(kind))return res.status(400).json({error:'Unknown idea kind'});
     const hasContent = typeof content === 'string' && content.trim() !== '';
     const storedIntent = normalizeIntent(intent);
     const storedPriority = normalizePriority(priority);
-    if (!hasContent && storedIntent === null && storedPriority === null) {
+    if (!hasContent && storedIntent === null && storedPriority === null && kind == null) {
         return res.status(400).json({ error: 'content, intent or priority required' });
     }
     const session = getTaskDriver(req.query.db).session();
@@ -4522,14 +4472,15 @@ app.patch('/api/ideas/:ideaId', async (req, res) => {
             `MATCH (i:Idea {taskId: $ideaId})
              SET i.content = COALESCE($content, i.content),
                  i.category = COALESCE($intent, i.category),
+                 i.kind = COALESCE($kind, i.kind),
                  i.priority = COALESCE($priority, i.priority),
                  i.updatedAt = timestamp()
              RETURN i.taskId AS ideaId, i.content AS content,
-                    i.category AS intent, i.priority AS priority`,
+                    i.category AS intent, i.kind AS kind, i.priority AS priority`,
             {
                 ideaId,
                 content: hasContent ? content.trim() : null,
-                intent: storedIntent,
+                intent: storedIntent, kind:kind||null,
                 priority: storedPriority,
             }
         );
@@ -4538,7 +4489,7 @@ app.patch('/api/ideas/:ideaId', async (req, res) => {
         const idea = {
             ideaId,
             content: r.get('content'),
-            intent: intentToList(r.get('intent')),
+            intent: intentToList(r.get('intent')), kind:r.get('kind'),
             priority: r.get('priority') || '',
         };
         if (io) emitWorkspace(io, session.workspace, 'idea:updated', idea);
@@ -4648,7 +4599,7 @@ io.on('connection', (socket) => {
                 `MATCH (i:Idea) WHERE i.status = 'open'
                  RETURN i.taskId AS ideaId, i.content AS content,
                         i.status AS status, i.createdBy AS createdBy,
-                        i.category AS intent, i.priority AS priority,
+                        i.category AS intent, i.kind AS kind, i.priority AS priority,
                         i.createdAt AS createdAt
                  ORDER BY i.createdAt`
             );

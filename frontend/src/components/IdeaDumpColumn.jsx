@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { FLOW_KINDS } from './CreateFlowDialog';
 
 export default function IdeaDumpColumn({
     column,
@@ -24,7 +25,7 @@ export default function IdeaDumpColumn({
     onNewIntentChange,
     newPriority,
     onNewPriorityChange,
-    onCreate,
+    onCreate, onPromoteFlow, newKind, onNewKindChange,
 }) {
     return (
         <div style={{
@@ -52,7 +53,7 @@ export default function IdeaDumpColumn({
                         onIntentsChange={onNewIntentChange}
                         priority={newPriority}
                         onPriorityChange={onNewPriorityChange}
-                        onCreate={onCreate}
+                        onCreate={onCreate} kind={newKind} onKindChange={onNewKindChange}
                     />
                     {ideas.map((idea) => (
                         <IdeaCard
@@ -70,7 +71,7 @@ export default function IdeaDumpColumn({
                             onSaveEdit={onSaveEdit}
                             onDelete={onDelete}
                             onToggleIntent={onToggleIntent}
-                            onPatch={onPatch}
+                            onPatch={onPatch} onPromoteFlow={onPromoteFlow}
                         />
                     ))}
 
@@ -123,6 +124,8 @@ function IdeaCard(props) {
                 <div>
                     <div style={{ ...ideaContentStyle, ...(!expanded ? { display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : {}) }}>{idea.content}</div>
                     {idea.content?.length > 180 && <button className="ui-button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Show less' : 'Show more'}</button>}
+                    <label style={intentRowStyle}>Kind <select aria-label="Kind of idea" value={idea.kind||'feature'} onChange={e=>onPatch(idea.ideaId,{kind:e.target.value})}>{FLOW_KINDS.map(k=><option key={k}>{k}</option>)}</select></label>
+                    <small style={{color:'var(--muted)'}}>Suggested promotion targets</small>
                     <IntentControls
                         {...props}
                         selected={idea.intent || []}
@@ -131,6 +134,7 @@ function IdeaCard(props) {
                         onPriorityChange={(priority) => onPatch(idea.ideaId, { priority })}
                     />
                     <div style={cardActionsStyle}>
+                        <button className="ui-button" onClick={()=>props.onPromoteFlow(idea)}>Promote to CodeFlow</button>
                         <button onClick={() => onStartEdit(idea)} style={editButtonStyle}>Edit</button>
                         <button onClick={() => onDelete(idea.ideaId)} style={deleteButtonStyle}>Delete</button>
                     </div>
@@ -157,6 +161,7 @@ function IdeaComposer(props) {
                     }
                 }}
             />
+            <label style={intentRowStyle}>Kind <select aria-label="New idea kind" value={props.kind||'feature'} onChange={e=>props.onKindChange(e.target.value)}>{FLOW_KINDS.map(k=><option key={k}>{k}</option>)}</select></label>
             <IntentControls
                 {...props}
                 selected={selectedIntents}

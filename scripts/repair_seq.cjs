@@ -103,17 +103,7 @@ async function main() {
         console.error(`Kein Workspace '${workspace}' in ${projectDir}/codevis.config.cjs`);
         process.exit(1);
     }
-    const dbUri = ws.dbUri || ws.neo4jUri;
-    if (!dbUri) {
-        console.error(`Workspace '${workspace}' hat keine dbUri in ${projectDir}/codevis.config.cjs`);
-        process.exit(1);
-    }
-    if (!ws.auth || typeof ws.auth.user !== 'string' || typeof ws.auth.pass !== 'string') {
-        console.error(`Workspace '${workspace}' hat keine vollständige auth-Konfiguration in ${projectDir}/codevis.config.cjs`);
-        process.exit(1);
-    }
-    const auth = ws.auth;
-    const driver = ladybug.driver(dbUri, ladybug.auth.basic(auth.user, auth.pass));
+    const driver = ladybug.workspace(workspace);
     const session = driver.session();
 
     try {

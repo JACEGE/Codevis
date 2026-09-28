@@ -40,10 +40,7 @@ async function main() {
         process.exit(2);
     }
 
-    const driver = ladybug.driver(
-        (wsConfig.dbUri || wsConfig.neo4jUri),
-        ladybug.auth.basic(wsConfig.auth.user, wsConfig.auth.pass)
-    );
+    const driver = ladybug.workspace(ws);
     const session = driver.session();
     try {
         const snap = await readSnapshot(session, { label: `${ws}@${paths.PROJECT_ROOT}` });

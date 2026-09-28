@@ -9,11 +9,13 @@ node_modules/
 react-source/
 data/
 frontend/dist/
+frontend/dist-demo/
 .claude/backups/
 .claude/filelocks/
 # Runtime state — written by hooks/agents while a team is working
 .claude/locks.json
 .claude/team-activity.jsonl
+.claude/touch-journal.jsonl
 # Local config left by the retired Brain channel launcher
 tools/channels/codevis-brain/brain.mcp.generated.json
 # Web-explorer crawl output

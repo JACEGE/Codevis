@@ -31,8 +31,8 @@ The browser rollback smoke scripts exercise the built UI with intercepted writes
 
 ## Checks still needed for a release
 
-- Run the exact release commit through the full OS/Node matrix in
-  `.github/workflows/ci.yml`. A local Windows pass does not establish POSIX mode
+- Run the exact release commit on the full OS/Node matrix in
+  `docs/RELEASE_CHECKLIST.md`. A local Windows pass does not establish POSIX mode
   preservation or native Linux/macOS database compatibility.
 - Add static checking or equivalent lint coverage for frontend JavaScript and
   JSX. The root TypeScript check does not inspect those files; the frontend

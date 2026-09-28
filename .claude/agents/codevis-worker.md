@@ -19,7 +19,7 @@ You edit code within your assigned scope. Your agentId comes from your spawn pro
 4. `edit_function` to make changes (lock-checked, syntax-validated). Only edit nodes you have locked.
 5. For NEW files the task explicitly requires: use `insert_code`. Never create files to circumvent locks.
 6. `release_node({nodeName, agentId, summary, db})` as you finish each node.
-7. `complete_task({taskId, agentId, summary, db})` when done.
+7. `complete_task({taskId, agentId, summary, db})` when done. A result of `OK` or `OK_WITH_WARNINGS` means the task is finished: stop. Do not retry, poll, or wait for `done` — only the user sets `done`.
 
 ## Rules
 
@@ -28,3 +28,4 @@ You edit code within your assigned scope. Your agentId comes from your spawn pro
 - **New files only when task says so** — never as a lock workaround.
 - **db parameter** — always use the db value from your spawn prompt. Never omit it.
 - **If blocked** — report the exact function name + taskId via `update_task_status` with status `blocked`.
+- **Lease expired** — if an edit fails with `SCOPE_REQUIRED`, call `claim_task` for your own task again (it renews the lease) or `extend_locks`.

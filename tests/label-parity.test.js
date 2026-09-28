@@ -36,7 +36,7 @@ function literalArray(file, anchor) {
 
 describe("Label-Listen zwischen Bridge und Frontend", () => {
     it("SPEC_LABELS enthaelt beidseitig dieselben Labels", () => {
-        const bridge = literalArray("server/bridge.js", "const SPEC_LABELS");
+        const bridge = require('../server/graph-levels.cjs').SPEC_LABELS;
         const palette = literalArray("frontend/src/nodePalette.js", "export const SPEC_LABELS");
 
         assert.ok(bridge.length > 0, "in der Bridge wurden keine Labels gefunden");

@@ -33,11 +33,6 @@ if (!validTargets.includes(targetName)) {
   console.error(`Invalid target '${targetName}'. Valid: ${validTargets.join(', ')}`);
   process.exit(1);
 }
-const targetWs = config.workspaces[targetName];
-// dbUri is the current name; neo4jUri is still accepted so configs written
-// by an older `codevis init` keep working.
-const { auth } = targetWs;
-const dbUri = targetWs.dbUri || targetWs.neo4jUri;
 const APP_URL = process.env.APP_URL || "http://localhost:3000";
 
 // ============================================================
@@ -50,7 +45,7 @@ function makeUid(label, name, file) {
 }
 
 // ============================================================
-// NEO4J HELPERS
+// GRAPH HELPERS
 // ============================================================
 
 async function saveRenderEdge(driver, sourceName, targetName) {
@@ -452,7 +447,7 @@ async function main() {
     let browser;
 
     try {
-        driver = ladybug.driver(dbUri, ladybug.auth.basic(auth.user, auth.pass));
+        driver = ladybug.workspace(targetName);
         await driver.verifyConnectivity();
         console.log("✓ Erfolgreich mit der CodeVis-Datenbank verbunden.");
 

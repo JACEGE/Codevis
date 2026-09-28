@@ -4,7 +4,7 @@
  * A small, long-lived process that OWNS the Ladybug database files and serves
  * Cypher queries over local HTTP. It is the ONLY process that opens the DBs
  * for writing — Ladybug/Kuzu is single-writer, so all access funnels through
- * here. The neo4j-compat client (server/ladybug-driver.cjs) spawns/attaches
+ * here. The Ladybug client (server/ladybug-driver.cjs) spawns/attaches
  * to this daemon and POSTs already-translated Cypher.
  *
  * Responsibilities:
@@ -498,7 +498,7 @@ function decodeParams(params) {
 
 // ── CREATE identity allocation ────────────────────────────────────────────────
 // New nodes created via Cypher CREATE need a fresh `seq` (numeric id() stand-in)
-// and `uid` (primary key). Neo4j auto-assigns internal ids; Kuzu does not. The
+// and `uid` (primary key). The
 // translator injects $__uidN/$__seqN placeholders and the compat client binds
 // them to sentinels ({__nextseq:true} / {__newuid:'<prefix>'}); we resolve them
 // here against a per-db counter so new ids never collide with migrated ones.
@@ -608,8 +608,7 @@ async function runCypher(dbKey, cypher, params, readOnly = false) {
         }
 
         // A statement may return multiple QueryResults (multi-statement). We
-        // only care about the LAST result's rows (matches neo4j single-result
-        // semantics for the app's one-statement-per-run usage).
+        // only return the final result's rows for the application's query API.
         const last = Array.isArray(result) ? result[result.length - 1] : result;
         const colNames = await last.getColumnNames();
         const colTypes = await last.getColumnDataTypes();
@@ -667,7 +666,7 @@ function tagRowInts(row, colNames, colTypes) {
 
 // ── JSON wire serialisation ───────────────────────────────────────────────────
 // BigInt is not JSON-serialisable. We tag INT64/BigInt values so the compat
-// client can faithfully reconstruct neo4j-Integer-like shims on the other side.
+// client can faithfully reconstruct Integer wrappers on the other side.
 // Shape: { __int64: "<decimal string>" }. Nested arrays/objects are walked.
 
 function tagBigInts(value) {
@@ -840,6 +839,29 @@ const server = http.createServer(async (req, res) => {
                     const session = new LocalSession(handle.conn, () => nextSeq(handle));
                     const { taskClaimOperation } = require('./task-claims.cjs');
                     const result = await taskClaimOperation(session, options || {}, require('./codevis-paths.cjs').PROJECT_ROOT);
+                    scheduleCheckpoint(db);
+                    return { result };
+                });
+            });
+            sendJson(res, 200, response);
+            return;
+        }
+
+        if (req.method === 'POST' && req.url === '/changes/operation') {
+            const { db = 'target', options, reqId } = JSON.parse(await readBody(req));
+            const response = await deduplicatedWrite(db, reqId, async () => {
+                const handle = await getHandle(db);
+                return handle.mutex(async () => {
+                    const paths = require('./codevis-paths.cjs');
+                    const { publicWorkspaceName, normalizeWorkspaceName } = require('../lib/workspace-names.cjs');
+                    const config = paths.loadConfig();
+                    const ws = config.workspaces[normalizeWorkspaceName(db)] || {};
+                    const session = new (require('./ladybug-local-session.cjs').LocalSession)(handle.conn, () => nextSeq(handle));
+                    const result = await require('../lib/workflow/service.cjs').changeOperation(session, options || {}, {
+                        projectRoot: paths.PROJECT_ROOT, workspace: publicWorkspaceName(db),
+                        config: { ...config, workflow: { ...config.workflow, ...ws.workflow } },
+                        sourceDirs: ws.sourceDir || [], exclude: ws.exclude || [],
+                    });
                     scheduleCheckpoint(db);
                     return { result };
                 });

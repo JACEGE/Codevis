@@ -3,9 +3,13 @@ const path = require('node:path');
 
 const DOCUMENTATION_FILES = Object.freeze([
   'README.md',
+  'AGENTS.md',
   'docs/README.md',
   'docs/USER_WORKFLOW.md',
+  'docs/CHANGES_GUIDE.md',
+  'docs/CHANGE_INTELLIGENCE.md',
   'docs/NAVIGATION.md',
+  'docs/RELEASE_CHECKLIST.md',
   'docs/DATABASE_NAMES.md',
   'docs/CONTEXT_WORKFLOW.md',
   'docs/DEAD_CODE_AND_LIMITS.md',

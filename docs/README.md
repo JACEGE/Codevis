@@ -14,7 +14,8 @@ workflows that need more detail.
 - [Parser coverage](PARSER_COVERAGE.md)
 - [Extractor SDK](EXTRACTOR_SDK.md)
 
-## Project guides
+## Maintainer guides
 
+- [Release checklist](RELEASE_CHECKLIST.md)
 - [Regression coverage](TEST_COVERAGE.md)
 - [Product roadmap](PRODUCT_ROADMAP.md)

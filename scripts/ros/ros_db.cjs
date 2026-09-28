@@ -1,7 +1,7 @@
 /**
  * ros_db.cjs — Read the ROS 2 layer out of the code graph.
  *
- * Mirrors scripts/spec/spec_db.cjs: takes an open neo4j/ladybug-compatible
+ * Mirrors scripts/spec/spec_db.cjs: takes an open Ladybug
  * `session`, returns plain JS objects. No MCP envelope, no rendering — the
  * rendering lives in scripts/ros/ros_diagram.js, so the model can be inspected
  * (and tested) on its own.

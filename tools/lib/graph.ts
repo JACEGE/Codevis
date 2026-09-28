@@ -2,11 +2,7 @@ import { createRequire } from "module";
 
 const { normalizeWorkspaceName, publicWorkspaceName } = createRequire(import.meta.url)("../../lib/workspace-names.cjs");
 
-/**
- * Structural stand-in for the driver surface `server/ladybug-driver.cjs`
- * implements. It replaces the `neo4j-driver` types, which are gone along with
- * the package — the compat client is the only backend.
- */
+/** Structural types for the embedded Ladybug driver. */
 export interface GraphDriver {
     session(...args: any[]): any;
     close(): Promise<void>;
@@ -15,10 +11,6 @@ export interface GraphDriver {
 export interface WorkspaceConfig {
     sourceDir: string | string[];
     exclude?: string[];
-    dbUri: string;
-    /** Pre-rename name, still read so older generated configs keep working. */
-    neo4jUri?: string;
-    auth: { user: string; pass: string };
 }
 
 export interface ServerContext {

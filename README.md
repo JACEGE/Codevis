@@ -5,10 +5,11 @@
 ![DB: embedded](https://img.shields.io/badge/database-embedded%20(Ladybug)-blue)
 ![MCP](https://img.shields.io/badge/MCP-scoped%20tools-purple)
 
-**Your code, tasks, knowledge, and runtime — one queryable graph.**
+**Connect why code changes to its implementation and tests — in one queryable graph.**
 
-CodeVis stores parsed code structure, tasks, knowledge, and recorded runtime events in an embedded graph. Relationships connect that information to the code it describes:
+CodeVis stores parsed code structure, CodeFlow requirements and test intentions, tasks, knowledge, and recorded runtime events in an embedded graph. Relationships connect that information to the code it describes:
 
+- a Requirement is `VALIDATED_BY` a TestCase, linked to production source and executable tests
 - a Task `AFFECTS` the functions it touches
 - a Knowledge node `APPLIES_TO` the code it constrains
 - runtime errors and user events hang off the function that produced them
@@ -25,7 +26,7 @@ MATCH (k:Knowledge)-[:APPLIES_TO]->(f)
 RETURN f.name, f.file, t.title, k.name
 ```
 
-Three ways in and out of the same graph: tree-sitter parsing, a 3D view in the browser, and a "braindump" box where you type or speak a rough idea. Saving braindumps is provider-independent; the optional automatic conversion into linked task, knowledge, and architecture nodes currently requires Claude Code CLI.
+Tree-sitter builds the source graph. The dashboard and MCP tools connect it to work, requirements and test intentions. The Ideas view captures rough notes by text or speech. Saving braindumps is provider-independent; the optional automatic conversion into linked task, knowledge, and architecture nodes currently requires Claude Code CLI.
 
 The database is embedded ([Ladybug](https://www.npmjs.com/package/@ladybugdb/core), a KuzuDB fork). CodeVis starts a local daemon as the single database writer; no separate database server installation is required.
 
@@ -36,33 +37,46 @@ Status: beta (`1.0.0-beta.4` in this checkout). Core graph, dashboard, and MCP w
 - [Documentation map](docs/README.md)
 - [User workflow](docs/USER_WORKFLOW.md)
 - [Back and Forward navigation](docs/NAVIGATION.md)
+- [Release verification](docs/RELEASE_CHECKLIST.md)
 - [Database names](docs/DATABASE_NAMES.md)
 - [Context workflow](docs/CONTEXT_WORKFLOW.md)
+- [Using CodeFlow: ideas to reviewed code](docs/CHANGES_GUIDE.md)
+- [CodeFlow architecture and progressive protocol](docs/CHANGE_INTELLIGENCE.md)
 - [Dead-code and parser limits](docs/DEAD_CODE_AND_LIMITS.md)
 - [Parser coverage and roadmap](docs/PARSER_COVERAGE.md)
 - [Extractor SDK contract](docs/EXTRACTOR_SDK.md)
 - [Regression coverage and remaining gaps](docs/TEST_COVERAGE.md)
 - [Product roadmap](docs/PRODUCT_ROADMAP.md)
+- [Coding-agent project memory](AGENTS.md)
 
 ## Screenshots
 
-Everything below is captured from the running CodeVis dashboard while CodeVis analyses its own repository. Nothing is mocked up. The interface keeps the graph, work views, analysis tools, diagrams, documentation, and terminal in one visual system.
+These light-mode screenshots show the running dashboard with Harbor Library, a fictional library project with indexed source and example work items. The interface and graph relationships are real; the example does not claim completed test execution. The interface keeps the graph, work views, analysis tools, diagrams, documentation, and terminal in one visual system.
 
 ### Work and code in one place
 
-**3D graph + Kanban.** The graph and board remain visible together, while the grouped navigation separates Work, Analyze, Model, and System views. Moving a task updates real graph work items and their code-node relationships.
+**3D graph + Task board.** The graph and board remain visible together, while the grouped navigation separates Work, Analyze, Model, and System views. Moving a task updates real graph work items and their code-node relationships.
 
-![Overview: 3D code graph with Kanban board](docs/screenshots/overview.png)
+![Overview: 3D code graph with Task board](docs/screenshots/overview.png)
+
+### From requirements to implementation
+
+**CodeFlow — inspect the engineering process.** Expand requirements, acceptance
+criteria and test intentions, inspect the current phase, and follow relationships
+into Tasks and source code. The process view and the main code graph use the same
+stored entities.
+
+![CodeFlow with library reservation requirements and test intentions](docs/screenshots/codeflow.png)
 
 ### Knowledge and design, attached to the code
 
-**Context — project knowledge linked to code.** Search tasks, knowledge, specifications, and related nodes without leaving the graph. Workers receive applicable context when they claim connected work.
+**Knowledge — project knowledge linked to code.** Search tasks, knowledge, specifications, and related nodes without leaving the graph. Workers receive applicable context when they claim connected work.
 
 ![Knowledge tab](docs/screenshots/knowledge.png)
 
-**Spec — diagrams checked against reality.** Import PlantUML or `.wsd`, bind participants to code, and reconcile what the design promises with what the implementation contains. Imported specification nodes survive graph rebuilds.
+**Specs — diagrams checked against reality.** Import PlantUML or `.wsd`, bind participants to code, and reconcile what the design promises with what the implementation contains. Imported specification nodes survive graph rebuilds.
 
-![Spec tab in the light dashboard](docs/screenshots/spec.png)
+![Specs view in the light dashboard](docs/screenshots/spec.png)
 
 ### Generated from the code, not maintained by hand
 
@@ -72,17 +86,17 @@ Everything below is captured from the running CodeVis dashboard while CodeVis an
 
 ### Asking the graph yourself
 
-**Explore — no agent in the loop.** Counts per label, ready-made scans (potential dead code/no static caller, god functions, duplicates, recursion), and your own Cypher. The query field is read-only; writes are rejected server-side. Note the two separate timestamps: when the graph was last *built*, and how old the newest *source file* in it is. A graph can be minutes old and describe code from six weeks ago — or be badly stale while the code moved on, which is the case worth catching.
+**Queries — no agent in the loop.** Counts per label, ready-made scans (potential dead code/no static caller, god functions, duplicates, recursion), and your own Cypher. The query field is read-only; writes are rejected server-side. Note the two separate timestamps: when the graph was last *built*, and how old the newest *source file* in it is. A graph can be minutes old and describe code from six weeks ago — or be badly stale while the code moved on, which is the case worth catching.
 
 Dead-code and God-Function scans remain runnable on a stale graph, with provisional-result warnings. Rebuild before acting on those results. Dead-code results distinguish private no-caller candidates from public APIs, framework entrypoints, callback targets, abstract contracts, and planned stubs. Refactoring candidates combine size, decisions, nesting, parameters, state writes, module spread, and internal fan-out; fan-out by itself is not treated as a God Function.
 
-![Explore tab](docs/screenshots/explore.png)
+![Queries view](docs/screenshots/explore.png)
 
 ### From a rough thought to linked nodes
 
-**Brain — turn rough thoughts into linked work.** Type or speak; an agent can extract tasks, knowledge, and architecture and link the result into the live graph.
+**Ideas — turn rough thoughts into linked work.** Type or speak; an agent can extract tasks, knowledge, and architecture and link the result into the live graph.
 
-![Braindump tab](docs/screenshots/braindump.png)
+![Ideas view](docs/screenshots/braindump.png)
 
 ### Understand what is loaded
 
@@ -103,6 +117,8 @@ internal link expands the relevant content.
 ## Contents
 
 - [Overview](#overview)
+- [CodeFlow: intention, implementation and evidence](#codeflow-intention-implementation-and-evidence)
+- [Dashboard navigation](#dashboard-navigation)
 - [How it works](#how-it-works)
 - [Install](#install)
 - [CLI command reference](#cli-command-reference)
@@ -111,7 +127,7 @@ internal link expands the relevant content.
 - [Analysis freshness and quality gates](#analysis-freshness-and-quality-gates)
 - [MCP tools](#mcp-tools)
 - [Class diagram from code](#class-diagram-from-code)
-- [The board and the Explore tab](#the-board-and-the-explore-tab)
+- [The Task board and Queries](#the-task-board-and-queries)
 - [How much of the graph you see](#how-much-of-the-graph-you-see)
 - [Optional extractors (verticals)](#optional-extractors-verticals)
 - [Reviewing a change: graph diff](#reviewing-a-change-graph-diff)
@@ -129,10 +145,66 @@ CodeVis records function calls, imports, render relationships, and state access 
 | Information | Representation |
 |---|---|
 | Code structure | Nodes and relationships extracted with tree-sitter |
+| CodeFlow | Flows, phases, requirements, acceptance criteria and TestCases connected to Tasks and source |
 | Tasks | `Task-AFFECTS->Function` relationships |
 | Knowledge & decisions | `Knowledge-APPLIES_TO->Function` relationships |
 | Runtime errors & events | Properties and recorded events linked to functions |
 | Agent coordination | Persisted lock properties and task waves; experimental |
+
+## CodeFlow: intention, implementation and evidence
+
+Use **Work → CodeFlow** when a request needs structured engineering analysis.
+Small, understood fixes can stay as Tasks or Epics. An Idea can be promoted to a
+Flow without deleting the Idea or creating implementation Tasks prematurely.
+
+1. **Requirements:** describe behavior, acceptance criteria and initial TestCases.
+2. **Source Analysis:** inspect affected code, existing tests, risks and additional regression cases.
+3. **Architecture:** record responsibilities, trade-offs and an attributed approval.
+4. **Planning:** connect existing Tasks/Epics to requirements and test intentions.
+5. **Development:** implement the plan and link TestCases to executable tests and production source.
+6. **Quality:** inspect configured checks, traceability, baseline/delta metrics and predicted versus actual impact.
+7. **Review:** record the review decision and validate completion.
+
+One Lead can perform all roles. CodeVis reveals the current phase's context and
+completion contract; it validates the gate before advancing. Workers can read
+focused task context but cannot advance the Flow. The dashboard does not launch
+an agent or run tests merely because a phase was clicked.
+
+A **TestCase is validation intent**, not an executable test or a passing result.
+Missing implementations, unrecorded results and stale evidence stay visible.
+Configured check results provide evidence; they do not prove that requirements
+or assertions are sufficient. Human review remains part of the process.
+
+CodeFlow's expandable React Flow view and the main 2D/3D graph are projections of
+the same entities. Use **Show in Code Graph**, **Trace → CodeFlow context** or
+**Trace implementation** to move between process, requirement, Task and code.
+Graph presets and separate relationship filters help select a useful perspective.
+
+Durable artifacts default to `docs/codevis/changes/<workspace>/<slug>/`.
+`state.json` owns workflow state; immutable Markdown revisions hold reasoning;
+the graph is the queryable projection. Source, Tasks and Knowledge retain their
+existing ownership. Commit artifacts with the code; CodeVis does not commit or
+push automatically. Configure `workflow.artifactDir` to change the artifact root.
+
+See [Using CodeFlow](docs/CHANGES_GUIDE.md) for MCP examples, recovery, quality
+configuration and individual TestCase results.
+
+## Dashboard navigation
+
+Select a section, then a view. Layout controls choose **Code graph**, **Split
+view** or **Full view**; they do not change the database.
+
+| Section | Views |
+|---|---|
+| Work | CodeFlow · Task board · Ideas · Specs |
+| Analyze | Knowledge · Inspector · Pathfinder · Queries |
+| Model | Classes · Diagrams · ROS 2 (when enabled) |
+| System | Docs · Settings |
+
+Start in **Task board** for understood work, **Ideas** for rough notes, and
+**CodeFlow** for a request that needs requirements and review. Search and the
+shared selection connect these views to the code graph. Back and Forward restore
+navigation context; see [Navigation](docs/NAVIGATION.md).
 
 ## How it works
 
@@ -144,17 +216,19 @@ CodeVis records function calls, imports, render relationships, and state access 
         │         Ladybug embedded code graph         │
         │  File · Function · Component · State ·      │
         │  Effect · Endpoint · Task · Knowledge · …   │
+        │  Flow · Requirement · TestCase · …          │
         │  + edges: CALLS · IMPORTS · RENDERS ·       │
         │  WRITES_STATE · APPLIES_TO · AFFECTS · …    │
+        │  VALIDATED_BY · IMPLEMENTS · VALIDATES · …  │
         └────────────────────────────────────────────┘
                │                              │
                ▼                              ▼
         3D view (browser, live)      MCP server (for agents)
 ```
 
-Nodes: File, Function, Class, Component, State, Effect, Endpoint, Module, Task, Epic, Knowledge, DiagramClass, Decision, DOMElement.
+Nodes include Flow, Phase, Requirement, AcceptanceCriterion, TestCase, SourceAnalysis, ArchitectureDecision, Idea, File, Function, Class, Component, State, Effect, Endpoint, Module, Task, Epic, Knowledge, DiagramClass, Decision, DOMElement.
 
-Edges: CONTAINS, CALLS, IMPORTS, IMPORTS_SYMBOL, INHERITS, RENDERS, PASSES_PROP, READS_STATE, WRITES_STATE, HAS_EFFECT, APPLIES_TO, AFFECTS, TOUCHED, FULFILLED_BY.
+Edges include HAS_PHASE, HAS_REQUIREMENT, HAS_CRITERION, VALIDATED_BY, VALIDATES, IMPLEMENTED_BY, IMPLEMENTS, IMPACTS, PROMOTED_TO, CONTAINS, CALLS, IMPORTS, IMPORTS_SYMBOL, INHERITS, RENDERS, PASSES_PROP, READS_STATE, WRITES_STATE, HAS_EFFECT, APPLIES_TO, AFFECTS, TOUCHED, FULFILLED_BY.
 
 `TOUCHED` (edit tool → node, with a timestamp and the tool's name) and `FULFILLED_BY` (Epic → Task) are documentary: they record what happened and are never walked during lock traversal, so grouping work or logging an edit cannot widen the region an agent holds.
 
@@ -164,7 +238,7 @@ Call resolution across files is conservative: a call only becomes a cross-file e
 
 ## Install
 
-Use any MCP client that can launch a local stdio server, including Claude Code, Codex, or Cursor. `codevis init` currently writes Claude Code configuration automatically; other clients can point at the same MCP command manually. The database is embedded — Ladybug ships prebuilt native binaries for Windows x64, macOS, and Linux, so there's no Neo4j server, no JVM, and nothing to install separately. The daemon starts itself and the schema is created on first run.
+Use any MCP client that can launch a local stdio server, including Claude Code, Codex, or Cursor. `codevis init` automatically configures Claude Code (`.mcp.json`) and Codex (`.codex/config.toml`). Other clients can point at the same MCP command manually. The database is embedded — Ladybug ships prebuilt native binaries for Windows x64, macOS, and Linux, so there's no Neo4j server, no JVM, and nothing to install separately. The daemon starts itself and the schema is created on first run.
 
 ### Add CodeVis to a project
 
@@ -182,7 +256,7 @@ For a project that is still being designed, start without a code graph:
 npx codevis init new
 ```
 
-Planning mode keeps Kanban, Tasks, Epics, Knowledge and Specs available, but
+Planning mode keeps the Task board, Tasks, Epics, Knowledge and Specs available, but
 does not start builds or file watchers. Once source code exists, switch modes
 and build it:
 
@@ -212,12 +286,13 @@ Run `codevis help <command>` for the complete options of any command.
 | `npx codevis build codevis_db full` | Build CodeVis itself into `codevis_db` |
 | `npx codevis start` | Start the MCP server manually (stdio) |
 | `npx codevis stop` | Stop this project's dashboard **and** daemon cleanly (checkpoints the WAL) |
-| `npx codevis dashboard` | Serve the 3D graph + Kanban (`--port N`, `--db NAME`, `--no-open`, `--watch`, `--no-watch`) |
+| `npx codevis dashboard` | Serve the code graph and work dashboard (`--port N`, `--db NAME`, `--no-open`, `--watch`, `--no-watch`) |
 | `npx codevis dashboard --web-shell` | Enable the browser shell for this dashboard process; disabled by default and bound to loopback only |
 | `npx codevis kanban` | Show the task board in the terminal (`--watch [seconds]` for live refresh) |
 | `npx codevis kanban --web` | Open the task board in the browser |
 | `npx codevis diff-graph <ref>` | Compare a branch's code graph against another commit |
 | `npx codevis impact <name>` | Explain callers, dependencies, tests and linked project knowledge |
+| `npx codevis quality --flow <slug> --run-checks --json` | Run configured Flow checks and record quality evidence |
 | `npx codevis quality` | Report parser resolution and optionally enforce quality gates |
 | `npx codevis info` | Ports, daemon state, database sizes — and what is wrong |
 
@@ -348,9 +423,9 @@ a second terminal and use http://localhost:5173 instead.
 
 "Save note" stores a braindump in the selected database without an AI provider.
 "Generate linked items" requires an installed and authenticated Claude Code CLI.
-Brain and Spec drafts stay in this browser tab when switching views. Edits made
+Ideas and Specs drafts stay in this browser tab when switching views. Edits made
 while a request is pending are preserved; a saved confirmation applies only to
-the submitted draft. Generated Brain results belong to the requesting workspace
+the submitted draft. Generated Ideas results belong to the requesting workspace
 and run, and failed runs show an error.
 
 Run the test suite with `npm test` (unit tests plus an end-to-end pass over
@@ -397,6 +472,7 @@ Call-resolution percentages measure observed internal callsites, not total langu
 
 The main tool groups are:
 
+- **CodeFlow:** `flow_read`, `flow_write` — list/resume Flows, read phase or task context, submit evidence and validate gates
 - **Workspace:** `get_workspace_identity`
 - **Analysis:** `project_db`, `codevis_db`, `predefined_queries`, `analysis_quality`, `impact`, `find_path`, `read_function`, `get_knowledge_for_node`, `get_runtime_errors` (`tool_db` and `meta_db` remain deprecated compatibility aliases)
 - **Editing:** `edit_code_patch`, `insert_code`, `rewrite_function`, `rollback_edit`, `move_function`, `rename_function`, `multi_file_edit`, `recover_stale_edit`, `update_graph_smart` (`edit_function` remains a deprecated compatibility alias)
@@ -461,7 +537,7 @@ The flow (lead/architect tools):
 
    Add `emitTasks: true` to turn the *missing* region into backlog Tasks that the existing worker/wave system can implement.
 
-The Spec tab in the frontend exposes a **"Build with Claude"** button that runs the full import → bind → reconcile → task-creation flow headlessly, using the same brain-worker approach as Braindump. Paste a diagram and get tasks back without typing any Cypher.
+The Specs view in the frontend exposes a **"Build with Claude"** button that runs the full import → bind → reconcile → task-creation flow headlessly, using the same brain-worker approach as Braindump. Paste a diagram and get tasks back without typing any Cypher.
 
 Spec nodes live in the graph beside the code and survive `build full`; bindings are stored against stable node uids, so they re-resolve after a rebuild. (Storage uses the single-table Ladybug model — distinct `Spec*` labels, no schema migration.)
 
@@ -490,7 +566,7 @@ Two Mermaid quirks the renderer works around, both of which used to reach the br
 
 ## Idea Dump
 
-The Idea Dump is a lightweight scratch column in the Kanban board, shown to the left of Backlog. It exists specifically for half-formed thoughts that are not ready to be tasks.
+The Idea Dump is a lightweight scratch column in the Task board, shown to the left of Backlog. It exists specifically for half-formed thoughts that are not ready to be tasks.
 
 The workflow:
 
@@ -502,19 +578,25 @@ The workflow:
 3. Once a specific idea is understood and agreed on, Claude calls `promote_idea_to_task` with a fully-specified `title`, `description`, and `workInstructions`. The task spec gate still applies here — it enforces quality on the way *out* of the dump, not on the way in.
 4. The original idea stays in the graph with `status='promoted'` and a `PROMOTED_TO` edge to the new task, so the origin of every task is traceable.
 
-Ideas are stored in the same embedded graph as tasks and knowledge and survive `build full`. The Idea Dump column in the Kanban board supports inline create, edit, and delete — no modal, no form. Ideas cannot be dragged to task columns; they are a different node type (`:Idea` label, no spec gate, no locks).
+For work that needs analysis first, choose **Promote to CodeFlow** on the Idea
+card. The new Flow starts in Requirements Discovery, keeps the original Idea
+and its `PROMOTED_TO` relationship, and creates no Tasks or Epic yet. One Idea
+can produce multiple Flows. Idea kind and suggested promotion targets are
+separate metadata; target chips are not automatic conversion buttons.
+
+Ideas are stored in the same embedded graph as tasks and knowledge and survive `build full`. The Idea Dump column in the Task board supports inline create, edit, and delete — no modal, no form. Ideas cannot be dragged to task columns; they are a different node type (`:Idea` label, no spec gate, no locks).
 
 Ideas follow the **selected workspace**, like tasks always have. They used to be read from `codevis_db` no matter which database the dashboard was showing, so a board on `project_db` displayed one workspace's tasks beside the other's ideas with nothing saying which column came from where. Writing was worse: an idea noted while looking at `project_db` landed in `codevis_db`, and `promote_idea_to_task` would have carried it across the workspace boundary.
 
-## The board and the Explore tab
+## The Task board and Queries
 
-The Kanban board is laid out as three full-width rows rather than one sideways-scrolling strip: intake (Idea Dump · Backlog · To Do), in flight (In Progress · Blocked · Needs Info · Review), and Done. Every card carries a checkbox, and every column header selects all of its own cards, so a set of tasks can be moved in one action. A bulk move reports what actually happened (`5 of 8 moved`) instead of failing silently on the ones that did not go through. Task fields are editable on the card itself — no round trip through Cypher or an MCP call to fix a title.
+The Task board is laid out as three full-width rows rather than one sideways-scrolling strip: intake (Idea Dump · Backlog · To Do), in flight (In Progress · Blocked · Needs Info · Review), and Done. Every card carries a checkbox, and every column header selects all of its own cards, so a set of tasks can be moved in one action. A bulk move reports what actually happened (`5 of 8 moved`) instead of failing silently on the ones that did not go through. Task fields are editable on the card itself — no round trip through Cypher or an MCP call to fix a title.
 
 Tasks can be grouped under an **Epic** (`GET/POST /api/epics`, `PUT /api/epics/:id/tasks/:taskId`, plus ordering). The Epic is a node in the same graph, linked to its tasks by `FULFILLED_BY`, and appears in the 3D view like anything else. The edge is documentary and is never walked when locks are traversed: putting two tasks under one epic must not silently widen the region either of them holds.
 
 Done cards — and only done cards — carry a delete button. A task that is still open is the only record that the work exists, so losing it loses the work; a task that is done has already served its purpose. The bridge re-reads the status in the `DELETE /api/tasks/:taskId` handler rather than trusting the client, so the rule holds even if the board and the graph have drifted apart. Deleting also clears the locks keyed to that task: locks hang off a `lockGroup` property rather than an edge, so removing the node alone would strand them on the code nodes for good.
 
-The **Explore** tab answers questions about the graph without going through an agent:
+The **Queries** view answers questions about the graph without going through an agent:
 
 - **Counts** — nodes per label, edges per type, files, when the graph was last built, which extractors are active.
 - **Ready-made scans** — potential dead code/no static caller, god functions, duplicates, recursion, entry points. These are the same queries `predefined_queries` exposes over MCP, from one shared module rather than a second copy.
@@ -524,7 +606,7 @@ The query field is read-only by construction: string literals, comments and quot
 
 Every result row carries a **Graph** column: one click focuses that node and its direct edges. Return `elementId(n) AS uid` for exact node identity. Legacy `ipv6` columns remain supported, but can match several nodes. Rows that cannot be placed distinguish a missing identity from a node outside the loaded slice.
 
-One number surprises people: Explore counts the whole database (tens of thousands of nodes, most of them AST-level), while the 3D view shows a *slice* of it. What governs that slice is the next section.
+One number surprises people: Queries counts the whole database (tens of thousands of nodes, most of them AST-level), while the 3D view shows a *slice* of it. What governs that slice is the next section.
 
 ## How much of the graph you see
 
@@ -642,10 +724,11 @@ CSS and HTML don't have a function/call model, so they aren't wired up.
 | Layer | Path | Job |
 |---|---|---|
 | Graph builder | `scripts/graph_builder.js` | tree-sitter to Ladybug, full and incremental |
+| CodeFlow | `lib/workflow/`, `frontend/src/changes/` | Versioned state, phase gates, graph projection and process view |
 | MCP server | `tools/mcp_server.ts`, `tools/handlers/` | the tools above |
 | Bridge | `server/bridge.js`, `server/query-security.cjs` | REST + WebSocket plus the isolated read-only query guard |
 | Frontend shell | `frontend/src/App.jsx`, `frontend/src/components/AppChrome.jsx` | Dashboard orchestration, navigation and full-screen shells |
-| Dashboard panels | `frontend/src/components/GraphPanel.jsx`, `DashboardSidePanel.jsx`, `KanbanBoard.jsx` | Graph controls and task/context/inspector views |
+| Dashboard panels | `frontend/src/components/GraphPanel.jsx`, `DashboardSidePanel.jsx`, `KanbanBoard.jsx` | Graph controls and Task board, Knowledge and Inspector views |
 | Frontend models | `frontend/src/hooks/`, `frontend/src/graph/`, `frontend/src/pathfinder/` | Reusable state and pure graph/pathfinder presentation logic |
 | Renderers | `frontend/src/components/GraphScene.jsx` | Force Graph 2D/3D; pure tooltip/edge rules live in `graph/presentationModel.js` |
 
@@ -663,13 +746,14 @@ The tab bar is the same everywhere, and the selected node is shared across all o
 
 | Tab | What it is for |
 |---|---|
-| 📋 Kanban | Tasks and ideas; drag between columns moves real locks |
-| 📚 Context | Conventions and decisions, linked to the code they constrain |
+| CodeFlow | Requirements, test intent, phases, linked implementation and review |
+| 📋 Task board | Tasks, Epics and Idea Dump; update status and inspect optional locks |
+| 📚 Knowledge | Conventions and decisions, linked to the code they constrain |
 | 🔍 Inspector | The selected node: source, edges, editable Task/Knowledge fields |
 | 🧭 Pathfinder | Walk a call tree or find a bounded A→Z route between two nodes |
-| 🔭 Explore | Counts, ready-made scans, and your own read-only Cypher |
-| 🧠 Brain | Braindump: rough text in, linked task/knowledge nodes out |
-| 📐 Spec | Import a diagram, bind it to code, reconcile design against reality |
+| 🔭 Queries | Counts, ready-made scans, and your own read-only Cypher |
+| 🧠 Ideas | Braindump: rough text in, linked task/knowledge nodes out |
+| 📐 Specs | Import a diagram, bind it to code, reconcile design against reality |
 | 🧩 Classes | Class diagram generated from the code graph itself |
 | 🤖 ROS 2 | Nodes, topics, services, actions — only when the ROS extractor is on |
 | 📚 Diagrams | The imported diagram library |
@@ -682,7 +766,7 @@ The tab bar is the same everywhere, and the selected node is shared across all o
 
 Semantic annotations are deliberately separate from parsed facts. An agent can use `propose_annotation` to attach a weighted, evidence-backed tag to an exact node; the Inspector shows its provenance, confidence and weight and lets a user accept or reject it. The proposal never rewrites `CALLS`, `IMPORTS` or repository Markdown Knowledge.
 
-Explore and the MCP database-query tools execute single read-only queries in a database-enforced read-only transaction. Dedicated tools such as `propose_annotation`, `create_task` and `link_knowledge` still write tags and relationships. After upgrading, run `codevis stop` and reconnect/restart your dashboard or MCP client so the daemon loads the new query endpoint; older daemons reject these queries until restarted.
+Queries and the MCP database-query tools execute single read-only queries in a database-enforced read-only transaction. Dedicated tools such as `propose_annotation`, `create_task` and `link_knowledge` still write tags and relationships. After upgrading, run `codevis stop` and reconnect/restart your dashboard or MCP client so the daemon loads the new query endpoint; older daemons reject these queries until restarted.
 
 The single-writer daemon is what makes the one-graph story hold together: the embedded database is opened by exactly one process (`server/ladybug-daemon.cjs`), and the bridge, the MCP server, and every script attach to it over loopback HTTP. The first client spawns it; later clients find it via pidfile + health check. No sync jobs, no webhooks, no eventual consistency between your task tracker and your code index — they're rows in the same store.
 
@@ -691,7 +775,7 @@ The single-writer daemon is what makes the one-graph story hold together: the em
 Because tasks, locks, and code live in one graph, you can run **several Claude/agent instances against the same codebase at the same time** and coordinate them through it — without them stepping on each other:
 
 - **Different files in parallel:** file-backed scopes claim whole files, including planned new files. Two functions in the same file intentionally conflict because editors replace file contents.
-- **The same thing in parallel:** `plan_task_waves` groups tasks whose locked subgraphs don't overlap into waves. Everything in wave 1 runs concurrently; wave 2 starts when wave 1 completes. The Kanban shows each task's wave as a badge.
+- **The same thing in parallel:** `plan_task_waves` groups tasks whose locked subgraphs don't overlap into waves. Everything in wave 1 runs concurrently; wave 2 starts when wave 1 completes. The Task board shows each task's wave as a badge.
 - **The optional locking flow:** with `locking.enabled: true`, create tasks with explicit `files` or add them with `plan_task_scope`. Plans may overlap. `claim_task` checks and acquires the complete scope and assigns the worker in one database transaction. `expand_task_scope` acquires additional free files atomically.
 
 Use this for supervised coordination. Conflicting expansions return `LOCK_CONFLICT` immediately with `action: "COORDINATE_SCOPE"`; they do not queue, partially acquire, or automatically release unfinished work. A coordinator must arrange a safe checkpoint and explicit handoff.
@@ -708,7 +792,7 @@ Multi-agent locking is experimental and cooperative. Claim acquisition and task 
 
 Braindump output is only as good as the model behind it. Read the generated tasks and knowledge before you build on them.
 
-What is solid: the structural parsing (functions, classes, imports, states, effects, render relationships), the 3D view, the Kanban, the MCP access to the graph, and braindump-to-graph itself.
+What is solid: the structural parsing (functions, classes, imports, states, effects, render relationships), the 3D view, the Task board, the MCP access to the graph, and braindump-to-graph itself.
 
 ## Roadmap
 

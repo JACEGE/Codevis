@@ -38,6 +38,11 @@ test('init safely serializes Windows paths, quotes, knowledge paths and exclusio
   const result = init(dir, ['code', '--source', source, '--exclude', excluded, '--knowledge', knowledge, '-y']);
   assert.equal(result.status, 0, result.stderr);
   const config = load(dir);
+  for (const workspace of Object.values(config.workspaces)) {
+    assert.equal(workspace.dbUri, undefined);
+    assert.equal(workspace.neo4jUri, undefined);
+    assert.equal(workspace.auth, undefined);
+  }
   assert.deepEqual(config.workspaces.project_db.sourceDir, [source]);
   assert.deepEqual(config.workspaces.project_db.exclude, [excluded]);
   assert.deepEqual(config.knowledge.paths, [knowledge]);
@@ -79,6 +84,7 @@ test('dependency failures fail init and never report setup complete', t => {
   assert.match(result.stderr, /Dependency installation failed/);
   assert.doesNotMatch(result.stdout, /Setup complete/);
   assert.equal(fs.existsSync(join(dir, '.mcp.json')), false);
+  assert.equal(fs.existsSync(join(dir, '.codex/config.toml')), false);
 });
 
 test('re-init migrates hook registrations without duplicating or replacing unrelated hooks', t => {
@@ -94,6 +100,9 @@ test('re-init migrates hook registrations without duplicating or replacing unrel
   assert.equal(hooks.filter(h => h.command.includes('lock-guard')).length, 1);
   assert.ok(hooks.some(h => h.command.endsWith('lock-guard.cjs"')));
   assert.ok(hooks.some(h => h.command === 'my-custom-hook'));
+  const postHooks = JSON.parse(fs.readFileSync(file)).hooks.PostToolUse;
+  assert.equal(postHooks.filter(entry => entry.hooks.some(h => h.command.endsWith('touch-recorder.cjs"'))).length, 1);
+  assert.equal(postHooks[0].matcher, 'Edit|Write|MultiEdit');
   const server = JSON.parse(fs.readFileSync(join(dir, '.mcp.json'))).mcpServers.codevis_graph;
   assert.equal(server.command, 'node');
   // The child resolves cwd through macOS's /var -> /private/var alias.
@@ -130,4 +139,38 @@ test('runtime version gate agrees with supported Node minimum', () => {
   const { supportedNode } = require('../lib/check-node.cjs');
   for (const version of ['18.20.8', '20.19.0', '22.11.0']) assert.equal(supportedNode(version), false);
   for (const version of ['22.12.0', '22.20.0', '24.0.0']) assert.equal(supportedNode(version), true);
+});
+
+
+test('init registers Codex automatically in both modes and preserves it on re-init', t => {
+  const { parse } = require('smol-toml');
+  for (const mode of ['new', 'code']) {
+    const dir = project(t);
+    const result = init(dir, [mode, '-y']);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Codex MCP/);
+    assert.match(result.stdout, /trusted projects/);
+    const file = join(dir, '.codex/config.toml');
+    const original = fs.readFileSync(file, 'utf8');
+    const server = parse(original).mcp_servers.codevis_graph;
+    assert.equal(server.cwd, fs.realpathSync(dir));
+    assert.equal(server.command, process.execPath);
+    assert.deepEqual(server.args, [join(fs.realpathSync(dir), 'node_modules/codevis/bin/codevis.mjs'), 'start']);
+    assert.equal(server.env.CODEVIS_PROJECT_DIR, fs.realpathSync(dir));
+    assert.equal(server.env.CODEVIS_ROLE, 'lead');
+    assert.equal(init(dir, ['-y']).status, 0);
+    assert.equal(fs.readFileSync(file, 'utf8'), original);
+  }
+});
+
+test('invalid Codex config fails init without a false setup-complete message', t => {
+  const dir = project(t);
+  fs.mkdirSync(join(dir, '.codex'));
+  const file = join(dir, '.codex/config.toml');
+  fs.writeFileSync(file, 'invalid = [');
+  const result = init(dir, ['new', '-y']);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Invalid .codex/);
+  assert.doesNotMatch(result.stdout, /Setup complete/);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'invalid = [');
 });

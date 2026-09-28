@@ -19,12 +19,31 @@ test('stacked dashboard gives the Kanban row a usable bounded height', () => {
   assert.match(css, /grid-template-rows: auto minmax\(340px, 45dvh\) minmax\(420px, 60dvh\) minmax\(180px, 25dvh\) 32px !important/);
 });
 
-test('Class diagram follows the application theme and offers bounded zoom', () => {
+test('Class diagram follows the application theme and pans/zooms via a transform viewport', () => {
   const classes = read('frontend/src/components/ClassDiagramTab.jsx');
+  const viewport = read('frontend/src/components/DiagramViewport.jsx');
   assert.match(classes, /theme === 'dark' \? 'dark' : 'default'/);
-  assert.match(classes, /Math\.max\(75, value - 25\)/);
-  assert.match(classes, /Math\.min\(400, value \+ 25\)/);
-  assert.match(classes, /width: `\$\{diagramZoom\}%`/);
+  assert.match(classes, /<DiagramViewport/);
+  // Mermaid's width="100%" + max-width cap must be replaced by the natural size.
+  assert.match(viewport, /removeProperty\('max-width'\)/);
+  assert.match(viewport, /translate\(\$\{x\}px, \$\{y\}px\) scale\(\$\{scale\}\)/);
+  assert.match(viewport, /touchAction: 'none'/, 'pinch zoom on touch devices needs touch-action: none');
+  assert.match(viewport, /passive: false/, 'wheel zoom must be able to preventDefault');
+});
+
+test('DiagramViewport zoom math keeps the cursor point fixed and allows real-size text', async () => {
+  const src = read('frontend/src/components/DiagramViewport.jsx');
+  // \r?: a checkout with core.autocrlf=true writes CRLF.
+  const pick = (name) => new RegExp(`export function ${name}[\\s\\S]*?\\r?\\n}\\r?\\n`).exec(src)[0].replace('export ', '');
+  // eslint-disable-next-line no-new-func
+  const { scaleLimits, zoomAround } = new Function(`${pick('scaleLimits')}${pick('zoomAround')}return { scaleLimits, zoomAround };`)();
+  const limits = scaleLimits(0.05); // a 20 000 px diagram fitted into ~1000 px
+  assert.ok(limits.max >= 2, 'text must be able to reach at least 200 % real size');
+  const v = zoomAround({ scale: 1, x: 10, y: 20 }, 2, 110, 120, limits);
+  assert.equal(v.scale, 2);
+  // Content point under the cursor: (110-10)/1 = 100 before, (110-v.x)/2 after.
+  assert.equal((110 - v.x) / v.scale, 100);
+  assert.equal((120 - v.y) / v.scale, 100);
 });
 
 test('graph overlays inherit theme surfaces instead of hard-coded dark panels', () => {

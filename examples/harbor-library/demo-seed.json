@@ -1,0 +1,136 @@
+[
+  {
+    "name": "create_knowledge",
+    "args": {
+      "db": "project_db",
+      "category": "domain",
+      "name": "Loan Rules",
+      "content": "Books are lent for 21 days, DVDs for 7 days, reference books never leave the library. Late fees are charged per overdue day (books $0.25, DVDs $1.00) and capped at $15 per loan. Members with $10 or more in open fees cannot borrow."
+    }
+  },
+  {
+    "name": "create_knowledge",
+    "args": {
+      "db": "project_db",
+      "category": "domain",
+      "name": "Reservation Queue",
+      "content": "Reservations are served first-come-first-served per item. When a copy is returned, the next waiting reservation becomes 'ready' and is held for 3 days. Expired holds move to the next member in the queue."
+    }
+  },
+  {
+    "name": "create_knowledge",
+    "args": {
+      "db": "project_db",
+      "category": "architecture",
+      "name": "Layering",
+      "content": "Entscheidung: api -> services -> repositories -> domain. Begruendung: controllers stay thin and map DomainError subclasses to HTTP status codes; services own all business rules; repositories are in-memory and replaceable."
+    }
+  },
+  {
+    "name": "create_task",
+    "args": {
+      "db": "project_db",
+      "createdBy": "demo-lead",
+      "priority": "high",
+      "initialStatus": "in_progress",
+      "title": "Allow renewing loans twice at most",
+      "description": "Members can currently renew a loan indefinitely as long as nobody reserved the item. Limit renewals to two per loan and return a clear 409 error from the API when the limit is reached.",
+      "workInstructions": "Add a renewCount field to Loan, increment it in CirculationService.renew, throw RuleViolation after two renewals. Acceptance: third renew call fails with 409.",
+      "targetNodes": [
+        "renew",
+        "Loan"
+      ],
+      "knowledgeLinks": [
+        "Loan Rules"
+      ]
+    }
+  },
+  {
+    "name": "create_task",
+    "args": {
+      "db": "project_db",
+      "createdBy": "demo-lead",
+      "priority": "medium",
+      "initialStatus": "in_progress",
+      "title": "Send SMS reminders for family members",
+      "description": "Family tier members asked for SMS reminders instead of email. ReminderScheduler should pick the SmsNotifier for members with tier 'family' and keep email for everybody else.",
+      "workInstructions": "Inject both notifiers into ReminderScheduler, choose by member.tier in sendDueSoonReminders and sendOverdueNotices. Acceptance: family members receive SMS only.",
+      "targetNodes": [
+        "ReminderScheduler",
+        "SmsNotifier"
+      ]
+    },
+    "completeAfterCreate": true
+  },
+  {
+    "name": "create_task",
+    "args": {
+      "db": "project_db",
+      "createdBy": "demo-lead",
+      "priority": "critical",
+      "title": "Fix double hold when two copies return at once",
+      "description": "When two copies of the same item are returned in quick succession, promoteNext can mark the same reservation ready twice and notify the member twice. Make promotion idempotent per reservation.",
+      "workInstructions": "In ReservationService.promoteNext skip reservations that are already ready; add a regression test in tests/reservations.test.ts. Acceptance: exactly one notification.",
+      "targetNodes": [
+        "promoteNext"
+      ],
+      "knowledgeLinks": [
+        "Reservation Queue"
+      ]
+    }
+  },
+  {
+    "name": "create_task",
+    "args": {
+      "db": "project_db",
+      "createdBy": "demo-lead",
+      "priority": "medium",
+      "title": "Search: filter catalogue by media type",
+      "description": "The search endpoint returns books and DVDs mixed together. Add an optional type filter (book, dvd) to SearchService.search and the GET /search route so the frontend can show separate tabs.",
+      "workInstructions": "Extend SearchService.search with an optional type parameter, pass params.type through router and LibraryController.handleSearch. Acceptance: /search?q=m&type=dvd returns only DVDs.",
+      "targetNodes": [
+        "search",
+        "handleSearch",
+        "buildRoutes"
+      ]
+    }
+  },
+  {
+    "name": "create_task",
+    "args": {
+      "db": "project_db",
+      "createdBy": "demo-lead",
+      "priority": "low",
+      "initialStatus": "backlog",
+      "title": "Student tier: waive fees during exam weeks",
+      "description": "The student council asked whether late fees could be waived during exam weeks. Needs a configurable calendar of exam weeks and a check in FeeCalculator before charging student members.",
+      "workInstructions": "Clarify the exam calendar source with the library staff first, then add an optional waiver predicate to FeeCalculator. Acceptance: no fee for students inside exam weeks.",
+      "targetNodes": [
+        "FeeCalculator",
+        "feeFor"
+      ],
+      "knowledgeLinks": [
+        "Loan Rules"
+      ]
+    }
+  },
+  {
+    "name": "create_task",
+    "args": {
+      "db": "project_db",
+      "createdBy": "demo-lead",
+      "priority": "low",
+      "initialStatus": "backlog",
+      "title": "Persist repositories in SQLite",
+      "description": "All repositories are in-memory, so every restart loses the catalogue and loans. Introduce a SQLite-backed implementation behind the same InMemoryRepository interface without changing the services.",
+      "workInstructions": "Create SqliteRepository implementing findById/all/save/remove, wire it in createLibrary behind a flag. Acceptance: existing tests pass against both implementations.",
+      "targetNodes": [
+        "InMemoryRepository",
+        "createLibrary"
+      ],
+      "knowledgeLinks": [
+        "Layering"
+      ]
+    }
+  }
+]

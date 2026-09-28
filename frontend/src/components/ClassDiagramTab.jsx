@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import BRIDGE_URL from '../bridgeUrl';
 import loadMermaid, { isChunkLoadError, withMermaidTheme } from '../lib/loadMermaid';
 import useTheme from '../hooks/useTheme';
+import DiagramViewport from './DiagramViewport';
 
 /**
  * ClassDiagramTab — the class structure of the analysed code, drawn from the
@@ -46,6 +47,16 @@ function Stat({ label, value }) {
     );
 }
 
+/** Checkbox styled as a control chip. `onChange` receives the boolean. */
+function Toggle({ checked, onChange, disabled, title, children }) {
+    return (
+        <label title={title} style={{ ...CONTROL, display: 'flex', alignItems: 'center', gap: 6, opacity: disabled ? 0.5 : 1 }}>
+            <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+            {children}
+        </label>
+    );
+}
+
 export default function ClassDiagramTab({ db }) {
     const [theme] = useTheme();
     const [data, setData] = useState(null);
@@ -65,14 +76,18 @@ export default function ClassDiagramTab({ db }) {
     const [rendering, setRendering] = useState(false);
     const [pathPrefix, setPathPrefix] = useState('');
     const [appliedPrefix, setAppliedPrefix] = useState('');
-    const [onlyConnected, setOnlyConnected] = useState(false);
+    // null = let the bridge decide ('auto': switched above ~40 classes). The
+    // checkbox then shows the value the bridge actually applied (data.options).
+    const [onlyConnected, setOnlyConnected] = useState(null);
+    const [includeUses, setIncludeUses] = useState(null);
+    const [groupByDirectory, setGroupByDirectory] = useState(null);
     const [showMethods, setShowMethods] = useState(true);
+    const [compact, setCompact] = useState(false);
+    const [showPrivate, setShowPrivate] = useState(false);
     const [includeTests, setIncludeTests] = useState(false);
     const [showSource, setShowSource] = useState(false);
-    // Start fitted to the panel. 150% made every diagram overflow before the
-    // user had touched zoom, which hid the right-hand classes in a narrow tab.
-    const [diagramZoom, setDiagramZoom] = useState(100);
-    const containerRef = useRef(null);
+    const [sourceFormat, setSourceFormat] = useState('mermaid');
+    const [svg, setSvg] = useState('');
     // Every mermaid render needs its own id; reusing one leaves the previous
     // SVG's definitions behind and arrows start pointing at stale nodes.
     const renderSeq = useRef(0);
@@ -81,11 +96,15 @@ export default function ClassDiagramTab({ db }) {
         const p = new URLSearchParams();
         if (db) p.set('db', db);
         if (appliedPrefix) p.set('pathPrefix', appliedPrefix);
-        if (onlyConnected) p.set('onlyConnected', 'true');
+        if (onlyConnected !== null) p.set('onlyConnected', String(onlyConnected));
+        if (includeUses !== null) p.set('includeUses', String(includeUses));
+        if (groupByDirectory !== null) p.set('groupByDirectory', String(groupByDirectory));
         if (!showMethods) p.set('includeMethods', 'false');
+        if (compact) p.set('compact', 'true');
+        if (showPrivate) p.set('memberVisibility', 'all');
         if (!includeTests) p.set('includeTests', 'false');
         return p.toString();
-    }, [db, appliedPrefix, onlyConnected, showMethods, includeTests]);
+    }, [db, appliedPrefix, onlyConnected, includeUses, groupByDirectory, showMethods, compact, showPrivate, includeTests]);
 
     useEffect(() => {
         let alive = true;
@@ -100,8 +119,7 @@ export default function ClassDiagramTab({ db }) {
     }, [query]);
 
     useEffect(() => {
-        const el = containerRef.current;
-        if (!el || !data || !data.mermaid) return;
+        if (!data || !data.mermaid) return undefined;
         let alive = true;
         setRenderError(null);
         setRendering(true);
@@ -116,7 +134,7 @@ export default function ClassDiagramTab({ db }) {
         const source = withMermaidTheme(data.mermaid, theme === 'dark' ? 'dark' : 'default');
         loadMermaid()
             .then((mermaid) => mermaid.render(id, source))
-            .then(({ svg }) => { if (alive && containerRef.current) containerRef.current.innerHTML = svg; })
+            .then((out) => { if (alive) setSvg(out.svg); })
             // A mermaid parse error must not blank the tab: the source view below
             // is still useful, and the message says which line broke.
             //
@@ -131,7 +149,17 @@ export default function ClassDiagramTab({ db }) {
     }, [data, theme]);
 
     const stats = (data && data.stats) || {};
+    const applied = (data && data.options) || {};
     const empty = !loading && !error && data && stats.classes === 0;
+    // Tri-state toggles: an explicit choice wins, otherwise show what 'auto' did.
+    const effective = (explicit, key) => (explicit !== null ? explicit : Boolean(applied[key]));
+    const autoNotes = [];
+    if (applied.large) {
+        if (includeUses === null && !applied.includeUses) autoNotes.push('uses arrows off');
+        if (onlyConnected === null && applied.onlyConnected) autoNotes.push(`${stats.isolatedHidden || 0} unconnected classes hidden`);
+        if (groupByDirectory === null && applied.groupByDirectory) autoNotes.push('grouped by folder');
+        if (applied.includeUses && applied.minUseCalls > 1) autoNotes.push(`uses arrows only with ≥ ${applied.minUseCalls} calls`);
+    }
 
     return (
         <div style={PANEL}>
@@ -174,26 +202,28 @@ export default function ClassDiagramTab({ db }) {
                         style={{ ...CONTROL, cursor: 'text', minWidth: 220 }}
                     />
                     <button type="submit" style={CONTROL}>Apply</button>
-                    <label style={{ ...CONTROL, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <input type="checkbox" checked={onlyConnected} onChange={(e) => setOnlyConnected(e.target.checked)} />
+                    <Toggle checked={effective(onlyConnected, 'onlyConnected')} onChange={setOnlyConnected} title="Hide classes without any relation">
                         only connected
-                    </label>
-                    <label style={{ ...CONTROL, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <input type="checkbox" checked={showMethods} onChange={(e) => setShowMethods(e.target.checked)} />
+                    </Toggle>
+                    <Toggle checked={effective(includeUses, 'includeUses')} onChange={setIncludeUses} title="Dotted arrows derived from method calls between classes">
+                        uses
+                    </Toggle>
+                    <Toggle checked={effective(groupByDirectory, 'groupByDirectory')} onChange={setGroupByDirectory} title="Frame classes by directory">
+                        group by folder
+                    </Toggle>
+                    <Toggle checked={compact} onChange={setCompact} title="Class names only, no members">
+                        compact
+                    </Toggle>
+                    <Toggle checked={showMethods} onChange={setShowMethods} disabled={compact}>
                         methods
-                    </label>
-                    <label style={{ ...CONTROL, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <input type="checkbox" checked={includeTests} onChange={(e) => setIncludeTests(e.target.checked)} />
+                    </Toggle>
+                    <Toggle checked={showPrivate} onChange={setShowPrivate} disabled={compact} title="Include _private members and dunders">
+                        private
+                    </Toggle>
+                    <Toggle checked={includeTests} onChange={setIncludeTests}>
                         tests
-                    </label>
+                    </Toggle>
                     <span style={{ flex: 1 }} />
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }} aria-label="Diagram zoom">
-                        <button type="button" style={CONTROL} onClick={() => setDiagramZoom((value) => Math.max(75, value - 25))}>−</button>
-                        <button type="button" style={{ ...CONTROL, minWidth: 64 }} onClick={() => setDiagramZoom(100)} title="Fit diagram width">
-                            {diagramZoom === 100 ? 'Fit' : `${diagramZoom}%`}
-                        </button>
-                        <button type="button" style={CONTROL} onClick={() => setDiagramZoom((value) => Math.min(400, value + 25))}>+</button>
-                    </div>
                     <button type="button" style={CONTROL} disabled={!data} onClick={() => setShowSource((v) => !v)}>
                         {showSource ? 'Hide source' : 'Show source'}
                     </button>
@@ -205,6 +235,12 @@ export default function ClassDiagramTab({ db }) {
                     </button>
                 </form>
 
+                {(autoNotes.length > 0 || stats.usesOmitted > 0) && (
+                    <div style={{ fontSize: 12, color: 'var(--muted, #94a3b8)' }}>
+                        {autoNotes.length > 0 && <>Large diagram ({stats.classes} classes): {autoNotes.join(' · ')} — change it with the toggles above. </>}
+                        {stats.usesOmitted > 0 && <>{stats.usesOmitted} weaker uses arrows omitted (only the {stats.uses} with the most calls are drawn).</>}
+                    </div>
+                )}
                 {loading && <div style={{ color: 'var(--muted, #94a3b8)', fontSize: 13 }}>Loading…</div>}
                 {error && <div style={{ color: '#ef4444', fontSize: 13 }}>Couldn&rsquo;t load: {error}</div>}
                 {empty && (
@@ -237,17 +273,32 @@ export default function ClassDiagramTab({ db }) {
                     </div>
                 )}
 
-                <div style={{ flex: 1, minHeight: 240, overflow: 'auto', border: '1px solid var(--border, #2a2f37)', borderRadius: 10, background: 'var(--surface, #14171c)', padding: 12 }}>
-                    <div
-                        ref={containerRef}
-                        style={{ width: `${diagramZoom}%`, minWidth: '100%', minHeight: '100%', transition: 'width 0.15s ease' }}
-                    />
-                </div>
+                <DiagramViewport
+                    svg={svg}
+                    resetKey={query}
+                    style={{ flex: 1, minHeight: 320, border: '1px solid var(--border, #2a2f37)', borderRadius: 10, background: 'var(--surface, #14171c)' }}
+                />
 
                 {showSource && data && (
-                    <pre style={{ margin: 0, maxHeight: 300, overflow: 'auto', fontSize: 12, padding: 12, borderRadius: 10, border: '1px solid var(--border, #2a2f37)', background: 'var(--surface, #14171c)' }}>
-                        {data.plantuml}
-                    </pre>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {/* Mermaid is what is drawn above; PlantUML is the
+                            round-trip format for import_spec. */}
+                        <div style={{ display: 'flex', gap: 6 }} role="tablist" aria-label="Source format">
+                            {['mermaid', 'plantuml'].map((fmt) => (
+                                <button
+                                    key={fmt}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={sourceFormat === fmt}
+                                    style={{ ...CONTROL, fontWeight: sourceFormat === fmt ? 600 : 400, borderColor: sourceFormat === fmt ? 'var(--accent, #38bdf8)' : undefined }}
+                                    onClick={() => setSourceFormat(fmt)}
+                                >{fmt === 'mermaid' ? 'Mermaid (rendered)' : 'PlantUML'}</button>
+                            ))}
+                        </div>
+                        <pre style={{ margin: 0, maxHeight: 300, overflow: 'auto', fontSize: 12, padding: 12, borderRadius: 10, border: '1px solid var(--border, #2a2f37)', background: 'var(--surface, #14171c)' }}>
+                            {sourceFormat === 'mermaid' ? data.mermaid : data.plantuml}
+                        </pre>
+                    </div>
                 )}
             </div>
         </div>

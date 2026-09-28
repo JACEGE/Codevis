@@ -37,9 +37,9 @@ function scopePath(value, root) {
 
 async function taskRow(session, taskId) {
     const result = await session.run(`MATCH (t:Task {taskId:$taskId})
-        RETURN t.status AS status, t.assignedTo AS assignedTo, t.title AS title`, { taskId });
+        RETURN t.status AS status, t.assignedTo AS assignedTo, t.title AS title, t.createdBy AS createdBy`, { taskId });
     const r = result.records[0];
-    return r && { status: r.get('status'), assignedTo: r.get('assignedTo'), title: r.get('title') };
+    return r && { status: r.get('status'), assignedTo: r.get('assignedTo'), title: r.get('title'), createdBy: r.get('createdBy') };
 }
 
 async function targets(session, taskId, options, root) {
@@ -230,6 +230,19 @@ async function taskClaimOperation(session, options, root) {
         const policy = await readScopePolicy(session, taskId);
         if (policy.effectiveMode === 'open') enabled = false;
         if (operation === 'claim') {
+            // Re-claiming one's own active task is idempotent: it renews the
+            // lease instead of reporting ALREADY_CLAIMED. Otherwise an agent
+            // whose lease expired is told to claim, is refused, and loops.
+            if (task.status === 'in_progress' && task.assignedTo === agentId) {
+                let renewed = { status: 'OK', activatedCount: 0 };
+                if (enabled) {
+                    const scope = await targets(session, taskId, { initial: true }, root);
+                    renewed = await acquire(session, taskId, agentId, scope, root, now, ttlMs);
+                    if (renewed.status !== 'OK') return renewed;
+                }
+                return { ...renewed, taskId, title: task.title, assignedTo: agentId, scopeMode: policy.effectiveMode,
+                    renewed: true, message: 'Task was already claimed by you; its scope lease was renewed.' };
+            }
             if (!PENDING.has(task.status) || (task.assignedTo && task.assignedTo !== agentId)) {
                 return { status: 'ALREADY_CLAIMED', currentStatus: task.status, assignedTo: task.assignedTo };
             }
@@ -265,10 +278,19 @@ async function taskClaimOperation(session, options, root) {
         if (operation === 'transition' || operation === 'complete') {
             const status = operation === 'complete' ? 'review' : options.newStatus;
             if (![...PENDING, ...ACTIVE, 'done'].includes(status)) throw new Error('Invalid task status.');
-            if (task.assignedTo && task.assignedTo !== agentId && agentId !== 'user' && !agentId.startsWith('lead-')) {
+            if (operation === 'transition' && task.assignedTo && task.assignedTo !== agentId && agentId !== 'user' && !agentId.startsWith('lead-')) {
                 return { status: 'NOT_OWNER', taskId, assignedTo: task.assignedTo };
             }
-            if (operation === 'complete' && task.assignedTo !== agentId) return { status: 'NOT_OWNER', taskId, assignedTo: task.assignedTo };
+            // Completion: the assignee, the task's creator, the user or a lead
+            // (agentId 'lead-*', same convention as transitions above).
+            if (operation === 'complete' && task.assignedTo !== agentId && task.createdBy !== agentId
+                && agentId !== 'user' && !agentId.startsWith('lead-')) {
+                return { status: 'NOT_OWNER', taskId, assignedTo: task.assignedTo, createdBy: task.createdBy,
+                    message: `Only the assignee ('${task.assignedTo ?? 'nobody'}'), the task creator, the user or a lead-* agent can complete this task.` };
+            }
+            if (operation === 'complete' && task.status === 'done') {
+                return { status: 'ALREADY_DONE', taskId, message: 'Task is already done. No further action is required.' };
+            }
             let result = { status: enabled ? 'NOOP' : 'DISABLED', activatedCount: 0, releasedCount: 0 };
             if (enabled && (status === 'done' || PENDING.has(status) || operation === 'complete')) {
                 const released = await session.run(`MATCH (n) WHERE n.lockGroup=$taskId

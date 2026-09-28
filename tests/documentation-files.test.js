@@ -10,7 +10,7 @@ const {
 } = require('../server/documentation-files.cjs');
 
 test('documentation endpoint allowlist covers the packaged active guide set', () => {
-  for (const expected of ['README.md', 'docs/README.md', 'docs/USER_WORKFLOW.md']) {
+  for (const expected of ['README.md', 'AGENTS.md', 'docs/README.md', 'docs/USER_WORKFLOW.md', 'docs/RELEASE_CHECKLIST.md']) {
     assert.ok(DOCUMENTATION_FILES.includes(expected));
     assert.equal(readDocumentationFile(root, expected).relative, expected);
   }

@@ -5,9 +5,10 @@ const ts = require('typescript');
 require('../lib/tsx-userinfo-preload.cjs');
 require('tsx/cjs/api').register();
 const { rewriteMovedImports } = require('../tools/lib/move-imports.ts');
+const { SKIP_WITHOUT_FILE_SYMLINKS } = require('./helpers/symlinks.cjs');
 
 for (const [sourceExt, runtimeExt] of [['.js', '.js'], ['.ts', '.js'], ['.tsx', '.js'], ['.mts', '.mjs'], ['.cts', '.cjs'], ['.ts', '']]) {
-    test(`move resolves a symbolic ${sourceExt} source imported with ${runtimeExt || 'no extension'}`, t => {
+    test(`move resolves a symbolic ${sourceExt} source imported with ${runtimeExt || 'no extension'}`, { skip: SKIP_WITHOUT_FILE_SYMLINKS }, t => {
         const fs = require('node:fs');
         const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'codevis-import-link-'));
         t.after(() => fs.rmSync(root, { recursive: true, force: true }));

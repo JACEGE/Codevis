@@ -40,7 +40,7 @@ export default function DashboardSidePanel({
     onSelectTab,
     onSequentialChange,
     onTraceDirectionChange,
-    onShowContext,
+    onShowContext, onOpenFlow, onTraceCodeFlow,
     onStepChange,
     pending,
     scopeError,
@@ -66,7 +66,7 @@ export default function DashboardSidePanel({
             }}
         >
             <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-                {activeTab === 'kanban' && <KanbanBoard onCardHover={onCardHover} db={activeDb} socket={socket} onShowNode={onShowContext} />}
+                {activeTab === 'kanban' && <KanbanBoard onCardHover={onCardHover} db={activeDb} socket={socket} onShowNode={onShowContext} onOpenFlow={onOpenFlow} />}
                 {activeTab === 'settings' && (
                     <SettingsPanel
                         activeDb={activeDb}
@@ -103,6 +103,7 @@ export default function DashboardSidePanel({
                         db={activeDb}
                         onSelectNode={onSelectGraphNode}
                         onSelectRelationship={onSelectInspectorRelationship}
+                        onTraceCodeFlow={onTraceCodeFlow}
                         onFindRoute={() => onSelectTab('pathfinder')}
                     />
                 )}

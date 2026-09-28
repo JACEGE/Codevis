@@ -6,6 +6,7 @@ const path = require('node:path');
 const ts = require('typescript');
 const vm = require('node:vm');
 const backups = require('../tools/lib/edit-backups.cjs');
+const { SKIP_WITHOUT_FILE_SYMLINKS } = require('./helpers/symlinks.cjs');
 
 function harness(t, fault) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codevis-rollback-'));
@@ -66,7 +67,7 @@ test('legacy backups without file identity are retained instead of guessed', asy
     assert.ok(fs.existsSync(legacy));
 });
 
-test('rollback accepts physical aliases and preserves a matching symbolic link', async t => {
+test('rollback accepts physical aliases and preserves a matching symbolic link', { skip: SKIP_WITHOUT_FILE_SYMLINKS }, async t => {
     const h = harness(t);
     const target = path.join(h.root, 'real.js');
     fs.renameSync(h.file, target); fs.symlinkSync(target, h.file, 'file');
@@ -77,7 +78,7 @@ test('rollback accepts physical aliases and preserves a matching symbolic link',
     assert.equal(fs.readFileSync(target, 'utf8'), 'original content');
 });
 
-test('rollback rejects a symbolic link redirected after its backup was created', async t => {
+test('rollback rejects a symbolic link redirected after its backup was created', { skip: SKIP_WITHOUT_FILE_SYMLINKS }, async t => {
     const h = harness(t);
     const other = path.join(h.root, 'other.js');
     fs.writeFileSync(other, 'other original');

@@ -1,5 +1,5 @@
 /**
- * A neo4j-shaped session backed by a REAL, throwaway Ladybug database.
+ * A graph session backed by a real, throwaway Ladybug database.
  *
  * The spec layer had zero DB-level coverage: all five spec test files exercise
  * pure parser functions, so nothing ever checked that the queries in

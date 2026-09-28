@@ -72,12 +72,30 @@ compatibility still need to be formalized. Optional Clang data from
 `compile_commands.json` and equivalent language services belong behind that
 interface; Tree-sitter remains the fast, portable baseline.
 
-## Experimental direction: runtime UI inspection
+## Future beta: live webpage inspection
 
-CodeVis may connect runtime DOM states and browser interactions with source
-components, event handlers and errors. An earlier navigation-crawler prototype
-exists in the development history, but runtime UI inspection is not part of the
-current beta.
+Add an opt-in runtime inspector for pages that CodeVis can open in an isolated
+browser session:
+
+```bash
+codevis inspect-ui https://example.test --watch
+```
+
+This is deliberately separate from the static source graph. The inspector
+would capture the live DOM, matched and computed CSS, JavaScript mutations,
+navigation and responsive-state changes through the browser debugging
+protocol. Elements and declarations could then be marked `active`,
+`overridden`, `inherited`, `inactive-media`, `invalid` or `inline`, with an
+`OVERRIDDEN_BY` edge carrying specificity, source order and `!important`
+evidence. Mutation and stylesheet events should update the graph incrementally
+instead of rebuilding it on every page change.
+
+Source maps and framework metadata should link runtime elements back to the
+best available HTML, CSS, JSX/TSX component and source line. Remote URLs are in
+scope as well as localhost, but the feature must use an isolated browser
+profile, redact secrets and make clear when a remote page has no source maps:
+in that case CodeVis can explain the delivered bundle and runtime DOM, not
+promise access to the site's private repository source.
 
 ## Remaining delivery order
 

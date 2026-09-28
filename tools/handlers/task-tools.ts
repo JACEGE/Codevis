@@ -1,17 +1,72 @@
 import { createRequire } from "module";
 const { reserveUniqueTaskId, generateWorkItemId } = createRequire(import.meta.url)("../lib/task-id.cjs");
-const { getTouchedNodes, getSyncFiles } = createRequire(import.meta.url)("../lib/task-context.cjs");
+const { getTouchedNodes, getSyncFiles, recordTouchedRanges } = createRequire(import.meta.url)("../lib/task-context.cjs");
+const { applyJournal, journalFiles, removeJournalEntries } = createRequire(import.meta.url)("../../lib/touch-journal.cjs");
 const { taskSpecProblems, mergeTaskSpec, deriveEpicStatus } = createRequire(import.meta.url)("../lib/task-rules.cjs");
 const { readScopePolicy } = createRequire(import.meta.url)("../../server/task-scope-policy.cjs");
 const { appendTaskComment } = createRequire(import.meta.url)("../lib/task-comments.cjs");
 import type { ServerContext, ToolHandler, ToolModule } from "../lib/graph.js";
 import { graphInt, pickDbDriver, pickDbName } from "../lib/graph.js";
-import { commitSyncWave, commitSyncFile } from "../lib/graph-sync.js";
-import { syncLockManifest, syncFileToGraph } from "../lib/graph-sync.js";
+import { commitSyncWave, commitSyncFileDetailed } from "../lib/graph-sync.js";
+import type { FileSyncOutcome } from "../lib/graph-sync.js";
+import { syncLockManifest, syncFileToGraphDetailed } from "../lib/graph-sync.js";
 import { transitionLocks, lockTtlMs } from "../lib/locks.js";
 import { resolve, extname, dirname } from "path";
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { fileURLToPath } from "url";
+
+/**
+ * Raw Edit/Write changes the touch-recorder hook journaled for this task. Their
+ * files join the sync list (new files have no graph node to be found by), and
+ * after the sync the journal is replayed so TOUCHED lands on current spans.
+ */
+function withJournalFiles(files: Array<{ file: string }>, projectDir: string, taskId: string) {
+    const known = new Set(files.map(entry => entry.file));
+    return [...files, ...journalFiles(projectDir, taskId).filter((file: string) => !known.has(file)).map((file: string) => ({ file }))];
+}
+
+async function applyTouchJournal(session: any, projectDir: string, taskId: string, consume: boolean) {
+    try {
+        const applied = await applyJournal(projectDir, taskId, (file: string, ranges: any[], kind: string) =>
+            recordTouchedRanges(session, { taskId, kind, file, ranges }));
+        if (consume && applied.entries) removeJournalEntries(projectDir, taskId);
+        return { edits: applied.entries, touched: applied.touched };
+    } catch (error: any) {
+        // Attribution is documentary; it never turns a completion into an error.
+        return { edits: 0, touched: 0, warning: `Edit attribution skipped: ${error.message}` };
+    }
+}
+
+/**
+ * Synchronize a task's files and classify every non-synchronized file with
+ * its reason. Skipped files (unsupported language, deleted) are expected;
+ * failed files could not be parsed or written.
+ */
+async function syncTaskFiles(
+    files: Array<{ file: string }>, projectDir: string,
+    syncOne: (absolutePath: string, file: string, ext: string) => Promise<FileSyncOutcome>,
+) {
+    const results: Record<string, any> = {};
+    const skippedFiles: Array<{ file: string; reason: string }> = [];
+    const failedFiles: Array<{ file: string; reason: string }> = [];
+    let synced = 0;
+    for (const { file } of files) {
+        let outcome: FileSyncOutcome;
+        try { outcome = await syncOne(resolve(projectDir, file), file, extname(file)); }
+        catch (err: any) { outcome = { ok: false, code: "SYNC_ERROR", reason: String(err?.message || err) }; }
+        if (outcome.ok) {
+            synced++;
+            results[file] = outcome.result;
+        } else if (outcome.skipped) {
+            skippedFiles.push({ file, reason: outcome.reason });
+            results[file] = { skipped: true, reason: outcome.reason };
+        } else {
+            failedFiles.push({ file, reason: outcome.reason });
+            results[file] = { failed: true, reason: outcome.reason };
+        }
+    }
+    return { synced, results, skippedFiles, failedFiles };
+}
 
 const __filename_task = fileURLToPath(import.meta.url);
 const __dirname_task = dirname(__filename_task);
@@ -502,6 +557,8 @@ const handlers: Record<string, ToolHandler> = {
                     status: "OK",
                     taskId: args.taskId,
                     assignedTo: args.agentId,
+                    renewed: claim.renewed || undefined,
+                    renewedNote: claim.renewed ? "You already owned this task; the scope lease was renewed. Continue your work." : undefined,
                     locking: lockingEnabled ? "enabled" : "disabled",
                     locksTransferred: graphInt(transferResult.records[0].get("transferred")),
                     editScope: { files: claim.files || [], nodeIds: claim.nodeIds || [] },
@@ -543,7 +600,9 @@ const handlers: Record<string, ToolHandler> = {
 
                 // Only the user can mark tasks as done
                 if (newStatus === "done" && agentId !== "user") {
-                    return { content: [{ type: "text", text: JSON.stringify({ status: "FORBIDDEN", error: "Only the user can mark tasks as done." }) }], isError: true } as any;
+                    return { content: [{ type: "text", text: JSON.stringify({ status: "FORBIDDEN",
+                        error: "Only the user can mark tasks as done.",
+                        hint: "For agents, 'review' is the terminal state. If the task is already in review, you are finished: stop working on it. Otherwise use complete_task to move it to review." }) }], isError: true } as any;
                 }
 
                 // ── Planned → Active lock transition ────────────────────────────────
@@ -618,44 +677,50 @@ const handlers: Record<string, ToolHandler> = {
                     operation: "complete", taskId: args.taskId, agentId: args.agentId,
                     summary: args.summary, lockingEnabled,
                 });
+                if (completed.status === "ALREADY_DONE") {
+                    return { content: [{ type: "text", text: JSON.stringify(completed) }] };
+                }
                 if (!["OK", "NOOP", "DISABLED"].includes(completed.status)) {
                     return { content: [{ type: "text", text: JSON.stringify(completed) }], isError: true };
                 }
                 const releasedLocks = completed.releasedCount || 0;
 
-                // Auto-sync graph for all files affected by this task
-                const affectedFiles = await getSyncFiles(session, { taskId: args.taskId });
+                // Best-effort graph refresh for the task's files. The task is
+                // already in review at this point: sync problems are reported
+                // as warnings and never turn completion into an error, because
+                // agents treat errors as "retry" and would loop forever on
+                // files that cannot be synchronized (docs, deleted files, ...).
                 const projectDir = process.env.CODEVIS_PROJECT_DIR || process.cwd();
-                let syncedFiles = 0;
-                const failedFiles: string[] = [];
-                for (const { file } of affectedFiles) {
-                    const absolutePath = resolve(projectDir, file);
-                    const ext = extname(file);
-                    const syncResult = await syncFileToGraph(absolutePath, file, ext, driver);
-                    if (syncResult) syncedFiles++;
-                    else failedFiles.push(file);
-                }
+                const affectedFiles = withJournalFiles(await getSyncFiles(session, { taskId: args.taskId }), projectDir, args.taskId);
+                const sync = await syncTaskFiles(affectedFiles, projectDir, (absolutePath, file, ext) =>
+                    syncFileToGraphDetailed(absolutePath, file, ext, driver));
+                const attributedEdits = await applyTouchJournal(session, projectDir, args.taskId, true);
+                const hasWarnings = sync.failedFiles.length > 0 || sync.skippedFiles.length > 0;
 
                 result = {
-                    status: failedFiles.length ? "SYNC_FAILED" : "OK",
+                    status: hasWarnings ? "OK_WITH_WARNINGS" : "OK",
                     taskId: args.taskId,
                     newStatus: "review",
+                    taskComplete: true,
                     locking: lockingEnabled ? "enabled" : "disabled",
-                    graphSynced: syncedFiles,
-                    failedFiles,
+                    graphSynced: sync.synced,
+                    attributedEdits,
+                    skippedFiles: sync.skippedFiles,
+                    failedFiles: sync.failedFiles,
                     releasedLocks,
-                    note: failedFiles.length
-                        ? "Task moved to review, but graph synchronization failed for some files. Repair those files and retry with sync_task."
-                        : lockingEnabled
-                        ? "Task moved to review. Graph synced and all locks for this task were released."
-                        : "Task moved to review and the graph was synced. Locking is disabled."
+                    note: (hasWarnings
+                        ? "Task complete and moved to review. No further action is required: stop working on this task. "
+                          + "The file warnings are informational only (skipped files cannot be graph-synced by design; "
+                          + "files with syntax errors are picked up by the next graph build). Optionally run sync_task once after fixing a syntax error."
+                        : "Task complete and moved to review. Graph synced. No further action is required: stop working on this task.")
+                        + (lockingEnabled ? " All locks for this task were released." : ""),
                 };
             }
 
             // Sync lock manifest after task ops that change locks
             if (lockingEnabled) await syncLockManifest(driver);
 
-            return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], ...(result.status === 'SYNC_FAILED' ? { isError: true } : {}) };
+            return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         });
     },
 
@@ -901,18 +966,28 @@ Object.assign(handlers, {
                     .filter(([s]) => !["done", "review"].includes(s))
                     .map(([s, c]) => `${c} ${s}`)
                     .join(", ");
+                const openResult = await session.run(
+                    `MATCH (t:Task {wave: $waveId}) WHERE NOT t.status IN ['done', 'review']
+                     RETURN t.taskId AS taskId, t.title AS title, t.status AS status, t.assignedTo AS assignedTo`,
+                    { waveId }
+                );
+                const openTasks = openResult.records.map((r: any) => ({
+                    taskId: r.get("taskId"), title: r.get("title"), status: r.get("status"), assignedTo: r.get("assignedTo"),
+                }));
+                const openIds = openTasks.map((t: any) => t.taskId).join(", ");
                 return { content: [{ type: "text", text: JSON.stringify({
                     status: "GATE_BLOCKED",
                     waveId,
                     doneTasks,
                     totalTasks,
                     pendingStatuses,
+                    openTasks,
                     hint: inProgressTasks > 0
-                        ? `${inProgressTasks} tasks still in_progress. Wait for workers to complete.`
+                        ? `${inProgressTasks} task(s) still in_progress (${openIds}). The wave completes once each is in review or done — review counts as finished; a human 'done' is not required.`
                         : blockedTasks > 0
-                        ? `${blockedTasks} tasks blocked/needs_info. Resolve or move them to another wave with move_to_wave.`
-                        : "Waiting for tasks to be marked done.",
-                    note: "Use force: true to proceed anyway (skips blocked tasks).",
+                        ? `${blockedTasks} task(s) blocked/needs_info (${openIds}). Resolve them or move them to another wave with move_to_wave.`
+                        : `Open task(s) not yet started: ${openIds}. Claim and complete them (review counts as finished), or move them with move_to_wave.`,
+                    note: "Tasks in review already count as finished for this gate. Use force: true to proceed anyway (skips open tasks).",
                 }) }] };
             }
 
@@ -1021,34 +1096,34 @@ Object.assign(handlers, {
 
             const task = await session.run('MATCH (t:Task {taskId:$taskId}) RETURN t.taskId AS taskId', { taskId: args.taskId });
             if (!task.records.length) return { content: [{ type: 'text', text: JSON.stringify({ status: 'NOT_FOUND', taskId: args.taskId }) }], isError: true };
-            const affectedFiles = await getSyncFiles(session, { taskId: args.taskId });
-
             const projectDir = process.env.CODEVIS_PROJECT_DIR || process.cwd();
-            const { resolve: pathResolve, extname } = await import("path");
-
-            const results: Record<string, any> = {};
-            const failedFiles: string[] = [];
-            for (const { file } of affectedFiles) {
-                const absolutePath = pathResolve(projectDir, file);
-                const ext = extname(file);
-                try {
-                    const res = await commitSyncFile(absolutePath, file, ext, driver, args.taskId);
-                    results[file] = res
-                        ? { created: res.created, removed: res.removed, updated: res.updated }
-                        : "failed";
-                    if (!res) failedFiles.push(file);
-                } catch (err: any) {
-                    results[file] = { error: err.message };
-                    failedFiles.push(file);
-                }
+            const affectedFiles = withJournalFiles(await getSyncFiles(session, { taskId: args.taskId }), projectDir, args.taskId);
+            const sync = await syncTaskFiles(affectedFiles, projectDir, (absolutePath, file, ext) =>
+                commitSyncFileDetailed(absolutePath, file, ext, driver, args.taskId));
+            // Kept for complete_task: replaying is idempotent (MERGE).
+            const attributedEdits = await applyTouchJournal(session, projectDir, args.taskId, false);
+            const syncResults: Record<string, any> = {};
+            for (const [file, res] of Object.entries(sync.results)) {
+                syncResults[file] = res && !res.skipped && !res.failed
+                    ? { created: res.created, removed: res.removed, updated: res.updated } : res;
             }
+            const hasWarnings = sync.failedFiles.length > 0 || sync.skippedFiles.length > 0;
 
+            // Never an error: sync_task does not change task status, and a
+            // file that cannot be parsed will not parse on an immediate retry.
             return { content: [{ type: "text", text: JSON.stringify({
-                status: failedFiles.length ? "SYNC_FAILED" : "OK",
+                status: hasWarnings ? "OK_WITH_WARNINGS" : "OK",
                 taskId: args.taskId,
-                syncResults: results,
-                failedFiles,
-            }, null, 2) }], ...(failedFiles.length ? { isError: true } : {}) };
+                graphSynced: sync.synced,
+                attributedEdits,
+                syncResults,
+                skippedFiles: sync.skippedFiles,
+                failedFiles: sync.failedFiles,
+                note: hasWarnings
+                    ? "Sync finished. Task status is unchanged. Skipped files cannot be graph-synced by design; failed files "
+                      + "(e.g. syntax errors) are picked up by the next graph build. Do not retry sync_task unless you changed one of the failed files."
+                    : "Sync finished. Task status is unchanged. No further action is required.",
+            }, null, 2) }] };
         });
     },
 }); // end Object.assign(handlers, wave5 handlers)
@@ -1313,7 +1388,8 @@ const definitions = [
     },
     {
         name: "claim_task",
-        description: "Atomically claim a task and its complete file scope. A conflict leaves status, owner and existing claims unchanged.",
+        description: "Atomically claim a task and its complete file scope. A conflict leaves status, owner and existing claims unchanged. " +
+            "Claiming your own in_progress task again is safe: it renews the scope lease (renewed: true).",
         inputSchema: {
             type: "object",
             properties: {
@@ -1344,7 +1420,8 @@ const definitions = [
     },
     {
         name: "complete_task",
-        description: "Worker marks a task as reviewed and immediately releases every lock in the task's lock group. Only the user can set 'done'.",
+        description: "Moves a task to review and immediately releases every lock in the task's lock group. Allowed for the assignee, the task creator, the user and lead-* agents. " +
+            "Review is the terminal state for agents: after status OK or OK_WITH_WARNINGS the task is finished — stop working on it. Only the user can set 'done'.",
         inputSchema: {
             type: "object",
             properties: {

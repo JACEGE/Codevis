@@ -20,7 +20,7 @@ export default function WorkspaceHeader({ activeDb, activeTab, extractors, tabs,
                             aria-pressed={layout === value} disabled={!onLayoutChange}
                             onClick={() => onLayoutChange?.(value)}
                             title={value === 'panel' ? 'Expand work panel' : value === 'graph' ? 'Expand graph' : 'Show graph and work panel'}>
-                            {value === 'graph' ? 'Graph' : value === 'split' ? 'Split' : 'Panel'}
+                            {value === 'graph' ? 'Code graph' : value === 'split' ? 'Split view' : 'Full view'}
                         </button>
                     ))}
                 </div>

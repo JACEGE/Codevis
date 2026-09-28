@@ -48,8 +48,8 @@ const workspace = (key) => {
     return ws;
 };
 const makeDriver = (key) => {
-    const ws = workspace(key);
-    return ladybug.driver(ws.dbUri || ws.neo4jUri, ladybug.auth.basic(ws.auth?.user || '', ws.auth?.pass || ''));
+    workspace(key);
+    return ladybug.workspace(key);
 };
 
 const WORK_LABELS = new Set(['Task', 'Epic', 'Idea', 'Knowledge']);

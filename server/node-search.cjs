@@ -2,7 +2,9 @@
 
 const { normalizeWorkspaceName, publicWorkspaceName } = require('../lib/workspace-names.cjs');
 
+const { LABELS: WORKFLOW_LABELS } = require('../lib/workflow/model.cjs');
 const RESULT_LIMIT = 50;
+const workflowPredicate = WORKFLOW_LABELS.map(label => `n:${label}`).join(' OR ');
 
 function parseSearchQuery(value) {
     if (typeof value !== 'string' || !value.trim() || value.length > 200) {
@@ -21,6 +23,7 @@ async function searchNodes(session, value) {
         MATCH (n)
         WHERE n:File OR n:Function OR n:Class OR n:Component OR n:Module
            OR n:Endpoint OR n:Task OR n:Epic OR n:Knowledge
+           OR ${workflowPredicate}
         WITH n, coalesce(n.title, n.name, n.path, n.file, n.taskId, '') AS name,
              coalesce(n.path, n.file, n.sourcePath, '') AS file
         WHERE lower(name) CONTAINS $query OR lower(file) CONTAINS $query

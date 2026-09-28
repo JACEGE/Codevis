@@ -14,6 +14,21 @@
 
 const PREDEFINED_QUERIES = [
     {
+        name: 'requirements_without_test_intent',
+        description: 'Requirements with neither direct TestCase intent nor acceptance criteria connected to TestCases.',
+        query: "MATCH (r:Requirement) WHERE NOT (r)-[:VALIDATED_BY]->(:TestCase) AND NOT (r)-[:HAS_CRITERION]->(:AcceptanceCriterion)-[:VALIDATED_BY]->(:TestCase) RETURN elementId(r) AS uid, r.title AS requirement, r.changeId AS changeId"
+    },
+    {
+        name: 'test_cases_without_implementation',
+        description: 'Intended TestCases with no executable source mapping. Intent can legitimately precede implementation.',
+        query: "MATCH (t:TestCase) WHERE NOT (t)-[:IMPLEMENTED_BY]->() RETURN elementId(t) AS uid, t.title AS testCase, t.changeId AS changeId"
+    },
+    {
+        name: 'source_validation_trace',
+        description: 'Test intention mapped to existing production and executable test source identities.',
+        query: "MATCH (t:TestCase)-[:VALIDATES]->(n) OPTIONAL MATCH (t)-[:IMPLEMENTED_BY]->(test) RETURN elementId(n) AS uid, n.name AS source, n.file AS file, t.title AS testCase, elementId(test) AS testId, test.file AS testFile"
+    },
+    {
         name: "direct_recursion",
         description: "Find functions that call themselves directly (direct recursion).",
         query: "MATCH (f:Function)-[:CALLS]->(f) RETURN elementId(f) AS uid, f.ipv6 AS ipv6, f.name AS function, f.file AS file"

@@ -1,7 +1,7 @@
 /**
  * ladybug-translate.cjs
  * ─────────────────────────────────────────────────────────────────────────
- * Rewrites Neo4j-flavoured Cypher into Kuzu/Ladybug-flavoured Cypher for the
+ * Rewrites application Cypher into Ladybug queries for the
  * PURE SINGLE-TABLE data model, where ALL semantic node types live in one
  * physical node table `CodeNode` and the semantic type is held in a STRING
  * column called `label`.
@@ -65,8 +65,8 @@ const PUNCT = new Set([
 ]);
 
 // On the single-table model `uid` is the PRIMARY KEY and `seq` is the numeric
-// id() replacement — both REQUIRED on CREATE (Neo4j auto-assigns internal ids;
-// Kuzu does not). For node patterns under a CREATE clause the translator injects
+// id() replacement — both must be assigned on CREATE.
+// For node patterns under a CREATE clause the translator injects
 // `uid:$__uid, seq:$__seq` into the property map; the driver fills those with
 // sentinels and the daemon resolves them (seq = per-db counter, uid = prefix+seq)
 // so the handlers' CREATE statements stay untouched. Prefix per known label keeps
@@ -80,7 +80,7 @@ const CREATE_UID_PREFIX = {
     User: 'user:',
 };
 
-// Single-table fold-in: secondary Neo4j labels that are NOT a node's primary
+// Single-table fold-in: secondary semantic labels that are NOT a node's primary
 // label but a boolean facet, stored as a column. `SET n:Component` / a multi-
 // label pattern `(:Function:Component)` / a predicate `n:Component` all map to
 // the column here. (Mirrors ladybug_schema.cjs: :Component→isComponent, …)
@@ -148,9 +148,9 @@ function tokenize(src) {
             continue;
         }
 
-        // Backtick-quoted identifier (Neo4j escaped name). Downstream rules
+        // Backtick-quoted Cypher identifier. Downstream rules
         // consume identifiers by value (not source spelling), so strip the
-        // delimiters here. Neo4j represents a literal backtick by doubling it.
+        // delimiters here. Cypher represents a literal backtick by doubling it.
         if (c === '`') {
             let j = i + 1;
             let buf = '';
@@ -326,8 +326,7 @@ function translate(cypher) {
             // labels(x)[0] -> x.label        (scalar; Kuzu lists are 1-indexed so
             //                                 [x.label][0] would be null — and the
             //                                 app uses labels(n)[0] to read the
-            //                                 primary label). Both forms also work
-            //                                 on Neo4j (x is a bare var).
+            //                                 primary label).
             const open = nextNonWs(tokens, k + 1);
             if (open === -1 || !isPunc(tokens[open], '(')) continue;
             const argIdx = nextNonWs(tokens, open + 1);
@@ -405,7 +404,7 @@ function translate(cypher) {
     // `{uid:…}` (kept canonical, e.g. Effect) or generically from label+props.
     rewriteMergeForLadybug(tokens, acc);
 
-    // --- Pass 1.5: `SET var:Label` (Neo4j label-add) → single-table column.
+    // --- Pass 1.5: `SET var:Label` (semantic label-add) → single-table column.
     // Must run before rule 5 (which would otherwise turn it into `var.label =
     // 'Label'` and clobber the primary label). Component/HTTPHandler/RuntimeDOM
     // fold to their boolean columns; any other (AST/ControlFlow subtype) → astType.
@@ -422,7 +421,7 @@ function translate(cypher) {
     // follows a '|'.
     collapseRelTypeColons(tokens);
 
-    // --- Pass 4: list indices are 1-based in Kuzu (0-based in Neo4j). Increment a
+    // --- Pass 4: list indices are 1-based in Kuzu (0-based in application queries). Increment a
     // numeric index that directly follows an operand: `xs[0]` -> `xs[1]`. Skips
     // list literals (`IN [1,2]`), rel var-length (`-[:R*0..2]`) and variable
     // indices (`xs[i]`, left as-is). `labels(x)[0]` was already folded to the
@@ -664,7 +663,7 @@ function tryRewriteNodePattern(tokens, open, inCreate, acc) {
     }
 
     // CREATE needs uid (PK) + seq (id()-replacement) which the handlers' CREATE
-    // statements omit (Neo4j auto-assigns them). Build the injection tokens
+    // statements omit. Build the injection tokens
     //   uid:$__uidN, seq:$__seqN
     // and register the param names so the driver/daemon can fill them.
     let idTokens = null;
@@ -1367,7 +1366,7 @@ function rewriteMergeForLadybug(tokens, acc) {
 }
 
 /**
- * Pass 1.5 — rewrite `SET var:Label` (Neo4j dynamic label-add) into a single-
+ * Pass 1.5 — rewrite `SET var:Label` (semantic label-add) into a single-
  * table column assignment. Walks SET assignment lists (from a `SET` keyword up
  * to the next clause keyword) and, at statement level (not inside ()/{}/[]),
  * converts a `var : Label` item:
@@ -1473,7 +1472,7 @@ const SELF_TEST_CASES = [
         //    grouping paren, NOT a node pattern (rule-4 guard + rule-5 relax).
         ['MATCH (t:Task {taskId: $x}), (n) WHERE n.name = $y AND (n:Function OR n:Class OR n:Component OR n:File) MERGE (t)-[:AFFECTS]->(n)',
             "MATCH (t:CodeNode {label:'Task', taskId: $x}), (n) WHERE n.name = $y AND (n.label = 'Function' OR n.label = 'Class' OR n.isComponent = true OR n.label = 'File') MERGE (t)-[:AFFECTS]->(n)"],
-        // 9b. SET label-add (Neo4j dynamic label) → single-table column
+        // 9b. SET label-add (semantic label) → single-table column
         ['MATCH (cf:ControlFlow {elementId:$e, file:$p}) SET cf:IfStatement, cf.kind=$k',
             "MATCH (cf:CodeNode {label:'ControlFlow', elementId:$e, file:$p}) SET cf.astType = 'IfStatement', cf.kind=$k"],
         ['SET handler:HTTPHandler', 'SET handler.isHttpHandler = true'],

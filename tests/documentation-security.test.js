@@ -20,9 +20,9 @@ test('rendered documentation links reach packaged guides while anchors and scree
       marked, DOMPurify: createDOMPurify(window), addHeadingIds: html => html,
       resolveDocumentationPath: (currentPath, linkedPath) => `${currentPath === 'README.md' ? '' : 'docs/'}${linkedPath}`,
     });
-    const html = render('[Guide](docs/USER_WORKFLOW.md#build-and-open)\n[Roadmap](docs/PRODUCT_ROADMAP.md)\n[Here](#install)\n![Graph](docs/screenshots/overview.png)\n[Bad](javascript:alert%281%29)');
+    const html = render('[Guide](docs/USER_WORKFLOW.md#build-and-open)\n[Memory](AGENTS.md)\n[Here](#install)\n![Graph](docs/screenshots/overview.png)\n[Bad](javascript:alert%281%29)');
     assert.match(html, /href="#doc=docs%2FUSER_WORKFLOW\.md&amp;anchor=build-and-open"/);
-    assert.match(html, /href="#doc=docs%2FPRODUCT_ROADMAP\.md"/);
+    assert.match(html, /href="#doc=AGENTS\.md"/);
     assert.match(html, /href="#install"/);
     assert.match(html, /src="docs\/screenshots\/overview.png"/);
     assert.doesNotMatch(html, /href="javascript:/);
@@ -42,7 +42,7 @@ test('the shipped dashboard documentation exposes CLI and agent function referen
   assert.match(readme, /codevis help <command>/);
   assert.match(readme, /`project_db`, `codevis_db`, `predefined_queries`/);
   assert.match(readme, /\*\*Epics:\*\*.*`create_epic`.*`set_epic_task_order`/);
-  assert.match(readme, /\| 📚 Context \|/);
+  assert.match(readme, /\| 📚 Knowledge \|/);
   assert.doesNotMatch(readme, /uids come from a per-database sequence counter/);
   assert.match(readme, /Kotlin\s+delegation, Go embedding, and Rust trait implementations/);
 });

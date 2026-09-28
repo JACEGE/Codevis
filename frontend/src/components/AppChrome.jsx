@@ -1,7 +1,7 @@
 import WorkspaceHeader from './WorkspaceHeader';
 
 export const FULL_SCREEN_TABS = new Set([
-    'brain', 'spec', 'classes', 'ros', 'diagrams', 'documentation',
+    'changes', 'brain', 'spec', 'classes', 'ros', 'diagrams', 'documentation',
 ]);
 
 export function FullScreenTabShell({

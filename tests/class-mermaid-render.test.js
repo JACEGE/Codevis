@@ -218,6 +218,34 @@ describe("generated class-diagram Mermaid renders in a browser", { skip: SKIP &&
         assert.match(r.svg, /<svg/, "expected an SVG document back");
     });
 
+    it("renders directory namespaces, stereotypes and unlabeled uses arrows", async () => {
+        const model = {
+            classes: [
+                { key: "a", name: "Store", file: "src/core/store.py", stereotype: "abstract", methods: [{ name: "get", signature: "get(self)" }], attributes: [] },
+                { key: "b", name: "Repo", file: "src/core/repo.py", stereotype: "interface", methods: [], attributes: [] },
+                { key: "c", name: "Api", file: "server/http-api/v2/api.js", methods: [], attributes: [] },
+                { key: "d", name: "Style", file: "style/note/class.js", methods: [], attributes: [] },
+                { key: "e", name: "Top", file: "main.py", methods: [], attributes: [] },
+                { key: "x", name: "rclcpp::Node", external: true, methods: [] },
+            ],
+            relations: [
+                { from: "a", to: "b", kind: "inherits" },
+                { from: "c", to: "a", kind: "uses" },
+                { from: "d", to: "x", kind: "inherits" },
+            ],
+        };
+        for (const compact of [false, true]) {
+            const src = renderMermaid(model, { groupByDirectory: true, compact });
+            assert.match(src, /namespace NS\d+\["src\/core"\] \{/);
+            assert.ok(!/ : uses/.test(src), "uses arrows carry no label");
+            const r = await render(src, `classes-ns-${compact}`);
+            assert.ok(r.ok, `mermaid failed on namespaces:\n${r.error}\n\n--- source ---\n${src}`);
+            for (const name of ["Store", "Repo", "Api", "Style", "Top", "interface", "abstract", "src/core", "style/note"]) {
+                assert.ok(r.svg.includes(name), `'${name}' missing from the rendered SVG`);
+            }
+        }
+    });
+
     it("renders an empty model rather than throwing", async () => {
         const r = await render(renderMermaid({ classes: [], relations: [] }), "classes-empty");
         assert.ok(r.ok, r.error);

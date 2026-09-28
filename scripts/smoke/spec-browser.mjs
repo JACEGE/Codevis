@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import puppeteer from 'puppeteer';
+import { selectDashboardView } from './dashboard-navigation.mjs';
 
 // Run against the actual packed dashboard. The held response reproduces a
 // workspace switch from another client while a diagram is still loading.
@@ -17,9 +18,7 @@ export async function verifySpecWorkspaceLifetime(baseUrl, screenshot) {
         // The live dashboard can keep network requests open. Wait for the
         // actual navigation control rather than requiring network silence.
         await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(() => [...document.querySelectorAll('nav button')]
-            .some(button => button.textContent.trim() === 'Spec'));
-        await page.evaluate(() => [...document.querySelectorAll('nav button')].find(b => b.textContent.trim() === 'Spec').click());
+        await selectDashboardView(page, 'Specs');
         await page.waitForSelector('button[title="Reopen this diagram + its overlay (no Claude run)"]');
         let release, started;
         const held = new Promise(resolve => { started = resolve; });
@@ -44,7 +43,7 @@ export async function verifySpecWorkspaceLifetime(baseUrl, screenshot) {
         await page.evaluate(async () => { await fetch('/api/status'); await new Promise(requestAnimationFrame); });
         assert.equal(await page.$eval('textarea.spec-input', el => el.value), '');
         assert.equal(await page.evaluate(() => [...document.querySelectorAll('button')].some(b => b.textContent.includes('Sync changes'))), false);
-        await page.evaluate(() => [...document.querySelectorAll('nav button')].find(b => b.textContent.trim() === 'Docs').click());
+        await selectDashboardView(page, 'Docs');
         const localGuideSelector = '.codevis-docs a[href="#doc=docs%2FUSER_WORKFLOW.md"]';
         await page.waitForSelector(localGuideSelector);
         assert.equal(await page.$('.codevis-docs a[href="https://github.com/JACEGE/Codevis/blob/main/docs/USER_WORKFLOW.md"]'), null);

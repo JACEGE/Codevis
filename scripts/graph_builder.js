@@ -23,10 +23,7 @@ const { collectSourceFiles, findFiles, IGNORED_DIRS, globToRegExp, compileExclud
 // Spec* bindings are stored as `value` (boundUid) referencing the stable
 // code-node uids, so they re-resolve after the rebuild.
 //
-// Enumerated explicitly rather than matched as `label STARTS WITH 'Spec'`
-// because this query must run on both backends: Ladybug rewrites `NOT n:Foo`
-// to `n.label <> 'Foo'` against its single-table schema, while Neo4j
-// (CODEVIS_DB=neo4j) has real labels and no `label` property to match on.
+// Enumerated explicitly so rebuild preservation and schema coverage can be tested.
 //
 // A label missing from this list is a SILENT data wipe — SpecField was absent
 // for its whole life, so every full rebuild deleted all class attributes.
@@ -38,6 +35,7 @@ const PRESERVED_LABELS = [
   // graph must never take it along. Absent from this list, the first
   // `build full` after the Idea Dump landed would silently empty the column.
   'Idea', 'TaskScope',
+  'Change', 'Flow', 'Phase', 'Requirement', 'AcceptanceCriterion', 'TestCase', 'SourceAnalysis', 'ArchitectureDecision',
   'SpecSequence', 'SpecParticipant', 'SpecMessage',
   'SpecClassDiagram', 'SpecClass', 'SpecMethod', 'SpecField', 'SpecRelation',
   'SpecUseCaseDiagram', 'SpecActor', 'SpecUseCase', 'SpecAssoc',
@@ -3325,7 +3323,98 @@ async function backupLocksAndAffects(session, filterCypher = '', filterParams = 
     file: r.get('file'), path: r.get('path'), owner: r.get('owner'),
     nodeLabels: r.get('labels'), bodySnippet: r.get('bodySnippet'), params: r.get('params'),
   }));
-  return { locks, affects, touched, knowledge, annotations };
+  const workflow = await require('../lib/workflow/rebuild.cjs').backupWorkflowLinks(session, filterCypher, filterParams);
+  // Task provenance (commit sync): CREATED/REMOVED point at code nodes that a
+  // rebuild deletes. Without a backup every rebuild of the file drops them.
+  const provenance = [];
+  for (const type of PROVENANCE_RELATIONS) {
+    const rows = await session.run(
+      `MATCH (t:Task)-[:${type}]->(n) ${filterCypher ? 'WHERE true ' + filterCypher : ''}
+       RETURN t.taskId AS taskId, n.name AS name, n.file AS file, n.path AS path, labels(n) AS labels,
+              elementId(n) AS uid, n.owner AS owner, n.bodySnippet AS bodySnippet, n.params AS params,
+              n.removedFromDisk AS removedFromDisk, n.removedAt AS removedAt,
+              n.startLine AS startLine, n.endLine AS endLine`,
+      filterParams
+    );
+    for (const r of rows.records) provenance.push({
+      type, taskId: r.get('taskId'), name: r.get('name'), file: r.get('file'), path: r.get('path'),
+      nodeLabels: r.get('labels'), uid: r.get('uid'), owner: r.get('owner'),
+      bodySnippet: r.get('bodySnippet'), params: r.get('params'),
+      removedFromDisk: r.get('removedFromDisk'), removedAt: r.get('removedAt'),
+      startLine: r.get('startLine'), endLine: r.get('endLine'),
+    });
+  }
+  if (provenance.length > 0) console.log(`  Backed up ${provenance.length} CREATED/REMOVED edge(s).`);
+  return { locks, affects, touched, knowledge, annotations, workflow, provenance };
+}
+
+const PROVENANCE_RELATIONS = ['CREATED', 'REMOVED'];
+// Statuses in which a task never holds locks: every transition into them
+// releases the task's lock group (server/task-claims.cjs).
+const LOCK_RELEASED_STATUSES = new Set(['open', 'backlog', 'todo', 'review', 'done']);
+
+const toMs = value => (value == null ? null : Number(value?.toNumber?.() ?? value));
+
+/**
+ * Re-read live task/lock state right before restoring a snapshot. A rebuild
+ * runs for seconds while MCP tools keep working: a task can be completed (its
+ * locks released), handed to another agent, or its lease renewed after the
+ * snapshot was taken. Restoring the snapshot blindly would resurrect released
+ * locks. Only positive evidence of a change skips a lock; unknown lock groups
+ * (standalone lock_subgraph, legacy tasks without status) restore as before.
+ */
+async function liveLockState(session, locks) {
+  const groups = [...new Set(locks.map(lock => lock.lockGroup).filter(Boolean))];
+  const tasks = new Map();
+  const renewedUntil = new Map();
+  if (!groups.length) return { tasks, renewedUntil };
+  const groupSet = new Set(groups);
+  const taskRows = await session.run(
+    'MATCH (t:Task) WHERE t.taskId IS NOT NULL RETURN t.taskId AS taskId, t.status AS status, t.assignedTo AS assignedTo');
+  for (const r of taskRows.records) {
+    if (groupSet.has(r.get('taskId'))) tasks.set(r.get('taskId'), { status: r.get('status'), assignedTo: r.get('assignedTo') });
+  }
+  const liveLocks = await session.run(
+    'MATCH (n) WHERE n.locked = true RETURN n.lockGroup AS lockGroup, n.lockedBy AS lockedBy, n.lockExpires AS lockExpires');
+  for (const r of liveLocks.records) {
+    if (!groupSet.has(r.get('lockGroup'))) continue;
+    const key = lockKey(r.get('lockGroup'), r.get('lockedBy'));
+    const expires = toMs(r.get('lockExpires'));
+    if (expires != null && expires > (renewedUntil.get(key) ?? -Infinity)) renewedUntil.set(key, expires);
+  }
+  return { tasks, renewedUntil };
+}
+
+const lockKey = (group, owner) => JSON.stringify([group ?? null, owner ?? null]);
+
+function renewedExpiry(lock, live) {
+  const own = toMs(lock.lockExpires);
+  const renewed = live.renewedUntil.get(lockKey(lock.lockGroup, lock.lockedBy));
+  // null means "no expiry"; never shorten it.
+  return own == null || renewed == null ? lock.lockExpires : Math.max(own, renewed);
+}
+
+function staleLockReason(lock, live) {
+  const task = lock.lockGroup ? live.tasks.get(lock.lockGroup) : null;
+  if (!task) return null;
+  if (task.status && LOCK_RELEASED_STATUSES.has(task.status)) return `task '${lock.lockGroup}' is now ${task.status}`;
+  if (task.assignedTo && lock.lockedBy && task.assignedTo !== lock.lockedBy) return `task '${lock.lockGroup}' now belongs to '${task.assignedTo}'`;
+  return null;
+}
+
+/**
+ * editInProgress marks an edit that has not written its file yet. When the
+ * file on disk is newer than the flag, the edit already wrote the file and the
+ * editor clears the flag itself; restoring it would leave a stale marker that
+ * blocks force_unlock and triggers recover_stale_edit.
+ */
+function editStillPending(lock, baseDir) {
+  if (!lock.editInProgress) return false;
+  const since = toMs(lock.editInProgressSince);
+  const file = lock.file || lock.path;
+  if (!baseDir || since == null || !file) return true;
+  try { return fs.statSync(path.resolve(baseDir, file)).mtimeMs <= since; }
+  catch { return true; }
 }
 
 // File nodes use path, while their derived nodes use file. Every incremental
@@ -3340,49 +3429,7 @@ async function backupFileLinks(session, paths) {
  * fallback is accepted only when it identifies exactly one candidate (preferring
  * the original file), so similar empty/getter functions are never guessed.
  */
-async function resolveRebuiltTargetUid(session, entry) {
-  const labels = (entry.nodeLabels || []).filter(l => !['_internal'].includes(l));
-  const labelFilter = labels.map(l => `n:${l}`).join(' OR ');
-  const whereLabels = labelFilter ? `AND (${labelFilter})` : '';
-  const isFile = labels.includes('File');
-  if (entry.uid) {
-    const byId = await session.run(
-      `MATCH (n) WHERE elementId(n) = $uid ${whereLabels}
-       RETURN elementId(n) AS uid, n.name AS name, n.file AS file, n.path AS path`,
-      { uid: entry.uid }
-    );
-    if (byId.records.length === 1) return {
-      uid: byId.records[0].get('uid'), name: byId.records[0].get('name'),
-      file: byId.records[0].get('file'), path: byId.records[0].get('path'), renamed: false,
-    };
-  }
-  const exact = await session.run(
-    isFile
-      ? `MATCH (n {path: $path}) WHERE true ${whereLabels} RETURN elementId(n) AS uid, n.name AS name, n.file AS file, n.path AS path`
-      : `MATCH (n {name: $name, file: $file}) WHERE coalesce(n.owner, '') = $owner ${whereLabels} RETURN elementId(n) AS uid, n.name AS name, n.file AS file, n.path AS path`,
-    { name: entry.name, file: entry.file, path: entry.path, owner: entry.owner || '' }
-  );
-  if (exact.records.length === 1) return {
-    uid: exact.records[0].get('uid'), name: exact.records[0].get('name'),
-    file: exact.records[0].get('file'), path: exact.records[0].get('path'), renamed: false,
-  };
-
-  if (!labels.includes('Function') || !entry.bodySnippet) return null;
-  const fingerprint = await session.run(
-    `MATCH (n:Function)
-     WHERE n.bodySnippet = $bodySnippet AND n.params = $params
-     RETURN elementId(n) AS uid, n.name AS name, n.file AS file`,
-    { bodySnippet: entry.bodySnippet, params: entry.params }
-  );
-  const candidates = fingerprint.records.map(r => ({
-    uid: r.get('uid'), name: r.get('name'), file: r.get('file'),
-  }));
-  const sameFile = candidates.filter(c => c.file === entry.file);
-  const chosen = sameFile.length === 1 ? sameFile[0] : candidates.length === 1 ? candidates[0] : null;
-  if (!chosen) return null;
-  console.log(`  Rename detected: '${entry.name}' (${entry.file}) -> '${chosen.name}' (${chosen.file}).`);
-  return { ...chosen, path: null, renamed: true };
-}
+const { resolveRebuiltTargetUid } = require('../lib/source-reference.cjs');
 
 /** Preserve the exact resolved identity for every restored relationship. */
 function restoreTargetMatch(target) {
@@ -3391,12 +3438,20 @@ function restoreTargetMatch(target) {
   return { pattern: '(n)', where: 'elementId(n) = $targetUid', params: { targetUid: target.uid } };
 }
 
-async function restoreLocksAndAffects(session, backup) {
-  const { locks, affects, touched = [], knowledge = [], annotations = [] } = backup;
-  let lockRestored = 0, lockFailed = 0;
+async function restoreLocksAndAffects(session, backup, { baseDir = null } = {}) {
+  const { locks, affects, touched = [], knowledge = [], annotations = [], provenance = [] } = backup;
+  let lockRestored = 0, lockFailed = 0, lockSkipped = 0;
+  const live = await liveLockState(session, locks);
 
   for (const lock of locks) {
+    const stale = staleLockReason(lock, live);
+    if (stale) {
+      lockSkipped++;
+      console.log(`  Skipped lock for '${lock.name || lock.path}' in '${lock.file || lock.path}': ${stale} (released during the build).`);
+      continue;
+    }
     const target = await resolveRebuiltTargetUid(session, lock);
+    const pending = editStillPending(lock, baseDir);
     if (!target) { lockFailed++; console.log(`  WARNING: Could not restore lock for '${lock.name}' in '${lock.file}' — node not found after rebuild.`); continue; }
 
     const m = restoreTargetMatch(target);
@@ -3408,8 +3463,11 @@ async function restoreLocksAndAffects(session, backup) {
        RETURN count(n) AS c`,
       { ...m.params, locked: lock.locked,
         lockedBy: lock.lockedBy, lockGroup: lock.lockGroup,
-        lockExpires: lock.lockExpires, lockOrigin: lock.lockOrigin,
-        editInProgress: lock.editInProgress, editInProgressSince: lock.editInProgressSince }
+        // A lease renewed during the build (extend_locks / re-claim) wins.
+        lockExpires: renewedExpiry(lock, live),
+        lockOrigin: lock.lockOrigin,
+        editInProgress: pending ? lock.editInProgress : null,
+        editInProgressSince: pending ? lock.editInProgressSince : null }
     );
     const rawCount = res.records[0]?.get('c');
     const c = rawCount?.toNumber?.() ?? Number(rawCount || 0);
@@ -3494,11 +3552,47 @@ async function restoreLocksAndAffects(session, backup) {
     annotationsRestored += count?.toNumber?.() ?? Number(count || 0);
   }
 
-  if (locks.length > 0) console.log(`  Restored ${lockRestored} lock(s)${lockFailed > 0 ? `, ${lockFailed} failed` : ''}.`);
+  let provenanceRestored = 0;
+  for (const edge of provenance) {
+    if (!PROVENANCE_RELATIONS.includes(edge.type)) throw new Error('Invalid provenance recovery relationship');
+    // A tombstone must not be re-attached to a live function by the
+    // body-fingerprint rename heuristic; resolve REMOVED targets exactly.
+    const target = await resolveRebuiltTargetUid(session,
+      edge.type === 'REMOVED' ? { ...edge, bodySnippet: null } : edge);
+    let res;
+    if (target) {
+      res = await session.run(
+        `MATCH (t:Task {taskId: $taskId}), (n) WHERE elementId(n) = $targetUid
+         MERGE (t)-[:${edge.type}]->(n) RETURN count(n) AS c`,
+        { taskId: edge.taskId, targetUid: target.uid });
+    } else if (edge.type === 'REMOVED' && edge.removedFromDisk && edge.name && edge.file) {
+      // The tombstone itself is file-derived and was swept with the file.
+      // Re-create it so the task keeps its record of removed functions.
+      const uid = require('crypto').createHash('sha256')
+        .update(`Tombstone::${edge.taskId}::${edge.owner || ''}::${edge.name}::${edge.file}`).digest('hex').slice(0, 16);
+      res = await session.run(
+        `MATCH (t:Task {taskId: $taskId})
+         MERGE (n:Function {uid: $uid})
+         SET n.name = $name, n.file = $file, n.owner = $owner, n.bodySnippet = $bodySnippet, n.params = $params,
+             n.startLine = $startLine, n.endLine = $endLine,
+             n.removedFromDisk = true, n.removedBy = $taskId, n.removedAt = $removedAt
+         MERGE (t)-[:REMOVED]->(n) RETURN count(n) AS c`,
+        { taskId: edge.taskId, uid, name: edge.name, file: edge.file, owner: edge.owner ?? null,
+          bodySnippet: edge.bodySnippet ?? null, params: edge.params ?? null,
+          startLine: toMs(edge.startLine), endLine: toMs(edge.endLine), removedAt: toMs(edge.removedAt) });
+    }
+    const raw = res?.records[0]?.get('c');
+    provenanceRestored += raw?.toNumber?.() ?? Number(raw || 0);
+  }
+
+  if (locks.length > 0) console.log(`  Restored ${lockRestored} lock(s)${lockSkipped > 0 ? `, ${lockSkipped} skipped (released during the build)` : ''}${lockFailed > 0 ? `, ${lockFailed} failed` : ''}.`);
+  if (provenance.length > 0) console.log(`  Restored ${provenanceRestored} of ${provenance.length} CREATED/REMOVED edge(s).`);
   if (affects.length > 0) console.log(`  Restored ${edgesRestored} of ${affects.length} AFFECTS edge(s).`);
   if (touched.length > 0) console.log(`  Restored ${touchedRestored} of ${touched.length} TOUCHED edge(s)${touchedFailed > 0 ? `, ${touchedFailed} failed` : ''}.`);
   if (knowledge.length > 0) console.log(`  Restored ${knowledgeRestored} of ${knowledge.length} Knowledge APPLIES_TO edge(s)${knowledgeFailed > 0 ? `, ${knowledgeFailed} failed` : ''}.`);
-  return { lockRestored, lockFailed, edgesRestored, touchedRestored, touchedFailed, knowledgeRestored, annotationsRestored };
+  const workflowRestored = await require('../lib/workflow/rebuild.cjs').restoreWorkflowLinks(session, backup.workflow, resolveRebuiltTargetUid);
+  return { lockRestored, lockFailed, lockSkipped, edgesRestored, touchedRestored, touchedFailed, knowledgeRestored,
+    annotationsRestored, workflowRestored, provenanceRestored };
 }
 
 async function getDirectDependentFiles(session, changedPaths, availableFilesByPath) {
@@ -3588,7 +3682,7 @@ async function removeDeletedFileNodes(session, allRelativePaths) {
   }
   const backup = await backupFileLinks(session, toDelete);
   await removeFileDerivedNodes(session, toDelete);
-  return backup.locks.length || backup.affects.length || backup.touched.length || backup.knowledge.length || backup.annotations.length
+  return backup.locks.length || backup.affects.length || backup.touched.length || backup.knowledge.length || backup.annotations.length || backup.workflow?.length
     ? [backup]
     : [];
 }
@@ -5366,7 +5460,7 @@ async function loadClassCatalog(session) {
 
 async function loadClassContext(session, relativePath) {
   if (classContextCache.has(relativePath)) return classContextCache.get(relativePath);
-  // Keep these sequential: Neo4j-compatible sessions do not guarantee that
+  // Keep these sequential: Database sessions do not guarantee that
   // concurrent session.run calls on the same session are safe.
   const imports = await session.run(
     `MATCH (:File {path: $path})-[:IMPORTS]->(f:File) RETURN f.path AS file`,
@@ -7283,10 +7377,7 @@ async function main() {
     process.exit(1);
   }
 
-  const { sourceDir, auth, exclude } = workspaceConfig;
-  // dbUri is the current name; neo4jUri is still accepted so configs written
-  // by an older `codevis init` keep working.
-  const dbUri = workspaceConfig.dbUri || workspaceConfig.neo4jUri;
+  const { sourceDir, exclude } = workspaceConfig;
   const baseDir = projectDir;
   const identity = paths.workspaceIdentityStatus(config, targetName);
   const dbPath = paths.DB_PATHS[normalizeWorkspaceName(targetName)];
@@ -7333,7 +7424,7 @@ async function main() {
   const parser = new Parser();
   const langCache = {};
 
-  const driver = ladybug.driver(dbUri, ladybug.auth.basic(auth.user, auth.pass));
+  const driver = ladybug.workspace(targetName);
 
   // Bring the schema up to date BEFORE writing anything.
   //
@@ -7437,8 +7528,11 @@ async function main() {
       // A finally block alone cannot recover links if parsing never recreates
       // their targets or the process is terminated.
       const removedPaths = [...new Set([...deletedPaths, ...rebuildPaths])];
-      const diffBackup = writeJournal(journalPath, identity.expected.fingerprint,
-        await backupFileLinks(session, removedPaths));
+      const diffSnapshot = await backupFileLinks(session, removedPaths);
+      // The recovery journal format has a fixed set of kinds; provenance edges
+      // are restored in-process only (lost if the build is killed mid-way).
+      const diffBackup = { ...writeJournal(journalPath, identity.expected.fingerprint, diffSnapshot),
+        provenance: diffSnapshot.provenance };
       for (const deletedPath of deletedPaths) {
         console.log(`Smart mode: file deleted from disk, removing nodes for: ${deletedPath}`);
       }
@@ -7479,20 +7573,23 @@ async function main() {
         console.log(`Smart mode: stamped ${updTotal} node(s) with updatedAt=${new Date(parseTimestamp).toISOString()}`);
       } finally {
         // ── Restore locks + AFFECTS edges for changed files (even on parse failure) ──
-        const restored = await restoreLocksAndAffects(session, diffBackup);
-        recoveryRestored = restored.lockRestored === diffBackup.locks.length
+        const restored = await restoreLocksAndAffects(session, diffBackup, { baseDir });
+        recoveryRestored = restored.lockRestored + restored.lockSkipped === diffBackup.locks.length
           && restored.edgesRestored === diffBackup.affects.length
           && restored.touchedRestored === diffBackup.touched.length
           && restored.knowledgeRestored === diffBackup.knowledge.length
-          && restored.annotationsRestored === diffBackup.annotations.length;
+          && restored.annotationsRestored === diffBackup.annotations.length
+          && restored.workflowRestored === (diffBackup.workflow || []).length
+          && restored.provenanceRestored === (diffBackup.provenance || []).length;
       }
 
     } else {
       console.log('Full mode: clearing database...');
 
       // ── Save lock state + AFFECTS edges before clearing ──
-      const fullBackup = writeJournal(journalPath, identity.expected.fingerprint,
-        await backupLocksAndAffects(session));
+      const fullSnapshot = await backupLocksAndAffects(session);
+      const fullBackup = { ...writeJournal(journalPath, identity.expected.fingerprint, fullSnapshot),
+        provenance: fullSnapshot.provenance };
 
       await session.run(
         'MATCH (n) WHERE ' +
@@ -7511,12 +7608,14 @@ async function main() {
       await assignIpv6Addresses(session, PROJECT_IDS[normalizeWorkspaceName(targetName)] || 1);
 
       // ── Restore lock state + AFFECTS edges ──
-      const restored = await restoreLocksAndAffects(session, fullBackup);
-      recoveryRestored = restored.lockRestored === fullBackup.locks.length
+      const restored = await restoreLocksAndAffects(session, fullBackup, { baseDir });
+      recoveryRestored = restored.lockRestored + restored.lockSkipped === fullBackup.locks.length
         && restored.edgesRestored === fullBackup.affects.length
         && restored.touchedRestored === fullBackup.touched.length
         && restored.knowledgeRestored === fullBackup.knowledge.length
-        && restored.annotationsRestored === fullBackup.annotations.length;
+        && restored.annotationsRestored === fullBackup.annotations.length
+        && restored.workflowRestored === (fullBackup.workflow || []).length
+          && restored.provenanceRestored === (fullBackup.provenance || []).length;
     }
 
     // ── Re-draw spec→code REALIZED_BY edges ──

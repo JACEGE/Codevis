@@ -105,3 +105,64 @@ test('directory-only rename events schedule a build for moved and removed source
   }
   assert.equal(changes, 4);
 });
+
+test('a deferred build stays pending and runs once the graph is quiet', async () => {
+  const { BuildQueue } = await import('../lib/commands/watch.mjs');
+  const outcomes = ['deferred', 'deferred', undefined];
+  const modes = [];
+  const queue = new BuildQueue({
+    debounceMs: 5, maxWaitMs: 50,
+    runBuild: async (mode) => { modes.push(mode); return outcomes.shift(); },
+    onError: (error) => { throw error; },
+  });
+  queue.change('diff');
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.deepEqual(modes, ['diff', 'diff', 'diff']);
+  queue.close();
+});
+
+test('the watcher sees active MCP file locks and running builds as busy', async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const { buildBusyReason } = await import('../lib/commands/watch.mjs');
+  const root = fs.mkdtempSync(join(os.tmpdir(), 'codevis-watch-busy-'));
+  try {
+    const lockDir = join(root, 'filelocks');
+    const buildMarker = join(root, '.build-in-progress');
+    assert.equal(buildBusyReason({ lockDir, buildMarker }), null);
+    fs.mkdirSync(join(lockDir, 'abc.lock'), { recursive: true });
+    fs.writeFileSync(join(lockDir, 'abc.lock', 'pid'), `${process.pid}\n${Date.now()}\ntoken`);
+    assert.equal(buildBusyReason({ lockDir, buildMarker }).kind, 'edit');
+    fs.writeFileSync(join(lockDir, 'abc.lock', 'pid'), `999999\n${Date.now() - 120000}\ntoken`);
+    assert.equal(buildBusyReason({ lockDir, buildMarker, alive: () => false }), null, 'a dead, stale lock is ignored');
+    fs.writeFileSync(buildMarker, JSON.stringify({ pid: 4242 }));
+    assert.equal(buildBusyReason({ lockDir, buildMarker, alive: pid => pid === 4242 }).kind, 'build');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('the deferring runner waits for edits up to a cap and maps a lost build race to deferred', async () => {
+  const { createDeferringRunner } = await import('../lib/commands/watch.mjs');
+  let clock = 0;
+  let busy = { kind: 'edit', message: 'edit' };
+  let builds = 0;
+  const run = createDeferringRunner({
+    runBuild: async () => { builds++; if (busy?.kind === 'build') throw new Error('exit 1'); },
+    busy: () => busy, maxDeferMs: 100, log: () => {}, now: () => clock,
+  });
+  assert.equal(await run('diff'), 'deferred');
+  clock = 50;
+  assert.equal(await run('diff'), 'deferred');
+  clock = 150;
+  assert.equal(await run('diff'), undefined, 'a leaked edit lock cannot starve the watcher');
+  assert.equal(builds, 1);
+  busy = { kind: 'build', message: 'build' };
+  assert.equal(await run('diff'), 'deferred', 'a running build always defers');
+  let started = false;
+  busy = null;
+  const racing = createDeferringRunner({
+    runBuild: async () => { started = true; busy = { kind: 'build', message: 'x' }; throw new Error('Graph update exited with code 1'); },
+    busy: () => busy, log: () => {},
+  });
+  assert.equal(await racing('diff'), 'deferred');
+  assert.equal(started, true);
+});

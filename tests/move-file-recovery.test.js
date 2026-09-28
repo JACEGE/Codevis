@@ -10,6 +10,7 @@ require('../lib/tsx-userinfo-preload.cjs');
 require('tsx/cjs/api').register();
 const parser = require('../tools/lib/treesitter.ts');
 const { rewriteMovedImports, assertMoveDestination } = require('../tools/lib/move-imports.ts');
+const { SKIP_WITHOUT_FILE_SYMLINKS } = require('./helpers/symlinks.cjs');
 
 const filename = path.resolve(__dirname, '../tools/handlers/edit-tools.ts');
 const tree = ts.createSourceFile(filename, fs.readFileSync(filename, 'utf8'), ts.ScriptTarget.Latest, true);
@@ -91,7 +92,7 @@ function harness(t, fault, targetExists = true, options = {}) {
         } };
 }
 
-test('moving a function preserves symbolic links for its source, target and importer', async t => {
+test('moving a function preserves symbolic links for its source, target and importer', { skip: SKIP_WITHOUT_FILE_SYMLINKS }, async t => {
     const h = harness(t, null, true, { source: 'export function work() { return 42; }\n', importer: "import { work } from './source.js';\nwork();\n" });
     const targets = new Map();
     for (const file of ['source.js', 'target.js', 'app.js']) {

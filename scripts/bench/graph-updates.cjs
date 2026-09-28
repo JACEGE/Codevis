@@ -87,7 +87,7 @@ async function main() {
     fs.mkdirSync(path.join(root, 'src'), { recursive: true });
     fs.mkdirSync(dataDir);
     fs.writeFileSync(path.join(root, 'codevis.config.cjs'), `module.exports = ${JSON.stringify({
-        workspaces: { project_db: { sourceDir: ['src'], dbUri: 'bolt://localhost:7687', auth: { user: '', pass: '' } } },
+        workspaces: { project_db: { sourceDir: ['src'] } },
         locking: { enabled: false }, autoUpdate: { enabled: false }, extractors: { ros: false },
     })};\n`);
     const changedFile = path.join(root, 'src/c.js');
@@ -132,7 +132,7 @@ async function main() {
         require(path.join(repo, 'lib/tsx-userinfo-preload.cjs'));
         require('tsx/cjs/api').register();
         ladybug = require(path.join(repo, 'server/ladybug-driver.cjs'));
-        driver = ladybug.driver('bolt://localhost:7687');
+        driver = ladybug.workspace('project_db');
         const { syncFileToGraph } = require(path.join(repo, 'tools/lib/graph-sync.ts'));
         const baselineSync = compareBatching ? loadBaselineSync() : null;
         report.baselineRef = compareBatching ? baselineRef : null;

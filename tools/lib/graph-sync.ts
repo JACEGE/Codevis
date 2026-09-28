@@ -1,8 +1,8 @@
-import { readFileSync, writeFileSync, renameSync, statSync } from "fs";
+import { readFileSync, writeFileSync, renameSync, statSync, existsSync } from "fs";
 import { randomUUID } from "crypto";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { getLanguageAndQuery, getParserInstance } from "./treesitter.js";
+import { getLanguageAndQuery, getParserInstance, EDIT_LANG_CONFIGS } from "./treesitter.js";
 import { graphInt } from "./graph.js";
 import { createRequire } from "node:module";
 const { getSyncFiles } = createRequire(import.meta.url)('./task-context.cjs');
@@ -80,9 +80,9 @@ async function prepareFileSync(absolutePath: string, relFile: string, ext: strin
     const { lang, funcQuery } = await getLanguageAndQuery(ext);
     const mtime = statSync(absolutePath).mtimeMs;
     const content = readFileSync(absolutePath, 'utf8');
-    if (statSync(absolutePath).mtimeMs !== mtime) throw new Error('File changed while preparing graph synchronization');
+    if (statSync(absolutePath).mtimeMs !== mtime) throw syncError('File changed while preparing graph synchronization', 'FILE_CHANGED');
     const functions = extractSyncFunctions(content, lang, funcQuery);
-    if (!functions) throw new Error('Cannot synchronize source with syntax errors');
+    if (!functions) throw syncError('Cannot synchronize source with syntax errors', 'SYNTAX_ERROR');
     const lines = content.split('\n');
     return { file:relFile, mtime, mode:taskId === undefined ? 'sync' : 'commit', taskId,
         functions:functions.map(fn => {
@@ -108,13 +108,72 @@ async function publishFileSync(snapshot: any, driver: any) {
     } finally { await session.close(); }
 }
 
-export async function syncFileToGraph(absolutePath: string, relFile: string, ext: string, driver: any) {
-    try {
-        return await publishFileSync(await prepareFileSync(absolutePath, relFile, ext), driver);
-    } catch (error: any) {
-        process.stderr.write(`[file-sync] ${relFile}: ${error?.message || error}\n`);
-        return null;
+function syncError(message: string, code: string) {
+    const error: any = new Error(message);
+    error.code = code;
+    return error;
+}
+
+/**
+ * Structured outcome of synchronizing one file into the graph.
+ * - ok: the file was parsed and published.
+ * - skipped: the file cannot be synchronized by design (unsupported language,
+ *   deleted file). This is not an error: nothing is wrong with the task.
+ * - otherwise a real failure; `code` is 'SYNTAX_ERROR' for unparsable source.
+ */
+// Flat shape (not a discriminated union): the project compiles without
+// strictNullChecks, where union narrowing on `ok` does not apply.
+export type FileSyncOutcome = {
+    ok: boolean;
+    result?: any;
+    skipped?: boolean;
+    /** 'UNSUPPORTED_EXTENSION' | 'FILE_MISSING' when skipped; 'SYNTAX_ERROR' or another failure code otherwise. */
+    code?: string;
+    reason?: string;
+};
+
+const FILE_SYNC_ATTEMPTS = 3;
+const missingFile = (): FileSyncOutcome =>
+    ({ ok: false, skipped: true, code: 'FILE_MISSING', reason: 'File no longer exists on disk; skipped.' });
+
+async function runFileSync(absolutePath: string, relFile: string, ext: string, driver: any, taskId?: string): Promise<FileSyncOutcome> {
+    if (!Object.prototype.hasOwnProperty.call(EDIT_LANG_CONFIGS, ext)) {
+        return { ok: false, skipped: true, code: 'UNSUPPORTED_EXTENSION',
+            reason: `Graph sync does not support '${ext || '(no extension)'}' files; skipped.` };
     }
+    let lastError: any = null;
+    for (let attempt = 1; attempt <= FILE_SYNC_ATTEMPTS; attempt++) {
+        if (!existsSync(absolutePath)) return missingFile();
+        try {
+            return { ok: true, result: await publishFileSync(await prepareFileSync(absolutePath, relFile, ext, taskId), driver) };
+        } catch (error: any) {
+            lastError = error;
+            // A concurrent writer changed or replaced the file between reads:
+            // retry with the new content. Every other failure is deterministic.
+            if (error?.code === 'FILE_CHANGED' || error?.code === 'ENOENT') continue;
+            break;
+        }
+    }
+    if (lastError?.code === 'ENOENT') return missingFile();
+    const reason = String(lastError?.message || lastError);
+    process.stderr.write(`[file-sync] ${relFile}: ${reason}\n`);
+    return { ok: false, code: lastError?.code || 'SYNC_ERROR', reason };
+}
+
+/** Synchronize one file and report why it was skipped or failed. */
+export function syncFileToGraphDetailed(absolutePath: string, relFile: string, ext: string, driver: any) {
+    return runFileSync(absolutePath, relFile, ext, driver);
+}
+
+/** Commit-synchronize one file for a task and report why it was skipped or failed. */
+export function commitSyncFileDetailed(absolutePath: string, relFile: string, ext: string, driver: any, taskId: string) {
+    return runFileSync(absolutePath, relFile, ext, driver, taskId);
+}
+
+/** Compatibility wrapper: the publish result, or null when the file was not synchronized. */
+export async function syncFileToGraph(absolutePath: string, relFile: string, ext: string, driver: any) {
+    const outcome = await syncFileToGraphDetailed(absolutePath, relFile, ext, driver);
+    return outcome.ok ? outcome.result : null;
 }
 
 
@@ -261,13 +320,8 @@ export async function commitSyncFile(
     absolutePath: string, relFile: string, ext: string, driver: any, taskId: string
 ): Promise<{ created: string[]; removed: string[]; updated: number; callsResynced: number; durationMs: number } | null> {
     const start = Date.now();
-    try {
-        const result = await publishFileSync(await prepareFileSync(absolutePath, relFile, ext, taskId), driver);
-        return { ...result, durationMs:Date.now() - start };
-    } catch (error: any) {
-        process.stderr.write(`[commit-sync] ${relFile}: ${error?.message || error}\n`);
-        return null;
-    }
+    const outcome = await commitSyncFileDetailed(absolutePath, relFile, ext, driver, taskId);
+    return outcome.ok ? { ...outcome.result, durationMs:Date.now() - start } : null;
 }
 
 // ── Commit-Sync for a full Wave ───────────────────────────────────────────────
@@ -283,6 +337,7 @@ export async function commitSyncWave(
     created: number;
     removed: number;
     failedFiles: string[];
+    skippedFiles: Array<{ file: string; reason: string }>;
     durationMs: number;
 }> {
     const t0 = Date.now();
@@ -316,15 +371,20 @@ export async function commitSyncWave(
     let totalCreated = 0;
     let totalRemoved = 0;
     const failedFiles: string[] = [];
+    const skippedFiles: Array<{ file: string; reason: string }> = [];
 
     for (const [file, taskId] of fileMap.entries()) {
         const absolutePath = pathResolve(projectDir, file);
         const ext = extname(file);
         try {
-            const res = await commitSyncFile(absolutePath, file, ext, driver, taskId);
-            if (res) {
-                totalCreated += res.created.length;
-                totalRemoved += res.removed.length;
+            const outcome = await commitSyncFileDetailed(absolutePath, file, ext, driver, taskId);
+            if (outcome.ok) {
+                totalCreated += outcome.result.created.length;
+                totalRemoved += outcome.result.removed.length;
+            } else if (outcome.skipped) {
+                // Unsupported languages and deleted files can never sync;
+                // they must not hold the wave in 'syncing' forever.
+                skippedFiles.push({ file, reason: outcome.reason });
             } else {
                 failedFiles.push(file);
             }
@@ -371,6 +431,7 @@ export async function commitSyncWave(
         created: totalCreated,
         removed: totalRemoved,
         failedFiles,
+        skippedFiles,
         durationMs,
     };
 }

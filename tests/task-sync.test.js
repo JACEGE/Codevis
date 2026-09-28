@@ -40,13 +40,28 @@ async function fixture(t) {
     return { ...db, root, driver, run };
 }
 
-test('standalone synchronization reports unreadable files as failures', async t => {
+test('standalone synchronization reports deleted and unsupported files as skipped warnings, not errors', async t => {
     const h = await fixture(t);
-    await h.session.run("MATCH (t:Task {taskId:'task'}) CREATE (n:Function {name:'missing', file:'missing.js'}) CREATE (t)-[:AFFECTS]->(n)");
+    fs.writeFileSync(path.join(h.root, 'notes.md'), '# notes');
+    await h.session.run("MATCH (t:Task {taskId:'task'}) CREATE (n:Function {name:'missing', file:'missing.js'}) CREATE (d:File {path:'notes.md'}) CREATE (t)-[:AFFECTS]->(n) CREATE (t)-[:TOUCHED]->(d)");
     const result = await h.run('sync_task', { taskId: 'task' });
-    assert.equal(result.status, 'SYNC_FAILED');
-    assert.equal(result.isError, true);
-    assert.deepEqual(result.failedFiles, ['missing.js']);
+    assert.equal(result.status, 'OK_WITH_WARNINGS');
+    assert.equal(result.isError, undefined);
+    assert.deepEqual(result.failedFiles, []);
+    assert.deepEqual(result.skippedFiles.map(f => f.file).sort(), ['missing.js', 'notes.md']);
+    assert.ok(result.skippedFiles.every(f => /skipped/.test(f.reason)));
+    assert.match(result.note, /status is unchanged/);
+});
+
+test('standalone synchronization reports syntax errors per file without an error result', async t => {
+    const h = await fixture(t);
+    fs.writeFileSync(path.join(h.root, 'broken.js'), 'function {');
+    await h.session.run("MATCH (t:Task {taskId:'task'}) CREATE (n:File {path:'broken.js'}) CREATE (t)-[:TOUCHED]->(n)");
+    const result = await h.run('sync_task', { taskId: 'task' });
+    assert.equal(result.status, 'OK_WITH_WARNINGS');
+    assert.equal(result.isError, undefined);
+    assert.equal(result.failedFiles[0].file, 'broken.js');
+    assert.match(result.failedFiles[0].reason, /syntax errors/);
 });
 
 for (const mode of ['task', 'wave']) {
@@ -80,16 +95,58 @@ test('completing a nonexistent wave cannot activate the following wave', async t
     assert.equal(task.records[0].get('status'), 'backlog');
 });
 
-test('task completion reports graph failure while preserving its review transition, then permits sync retry', async t => {
+test('task completion never fails on graph sync problems and tells the agent it is finished', async t => {
     const h = await fixture(t);
-    await h.session.run("MATCH (t:Task {taskId:'task'}) SET t.status='in_progress', t.assignedTo='audit' CREATE (n:File {path:'new.js'}) CREATE (t)-[:TOUCHED]->(n)");
+    fs.writeFileSync(path.join(h.root, 'broken.js'), 'function {');
+    fs.writeFileSync(path.join(h.root, 'README.md'), '# docs');
+    await h.session.run("MATCH (t:Task {taskId:'task'}) SET t.status='in_progress', t.assignedTo='audit' CREATE (n:File {path:'new.js'}) CREATE (b:File {path:'broken.js'}) CREATE (d:File {path:'README.md'}) CREATE (t)-[:TOUCHED]->(n) CREATE (t)-[:TOUCHED]->(b) CREATE (t)-[:TOUCHED]->(d)");
     const completed = await h.run('complete_task', { taskId: 'task', agentId: 'audit', summary: 'Completed work' });
-    assert.equal(completed.status, 'SYNC_FAILED');
-    assert.equal(completed.isError, true);
+    assert.equal(completed.status, 'OK_WITH_WARNINGS');
+    assert.equal(completed.isError, undefined);
     assert.equal(completed.newStatus, 'review');
-    assert.deepEqual(completed.failedFiles, ['new.js']);
-    fs.writeFileSync(path.join(h.root, 'new.js'), 'function recovered() {}');
-    assert.equal((await h.run('sync_task', { taskId: 'task' })).status, 'OK');
+    assert.equal(completed.taskComplete, true);
+    assert.match(completed.note, /No further action is required/);
+    assert.deepEqual(completed.skippedFiles.map(f => f.file).sort(), ['README.md', 'new.js']);
+    assert.deepEqual(completed.failedFiles.map(f => f.file), ['broken.js']);
+    const stored = await h.session.run("MATCH (t:Task {taskId:'task'}) RETURN t.status AS status");
+    assert.equal(stored.records[0].get('status'), 'review');
+    fs.writeFileSync(path.join(h.root, 'broken.js'), 'function recovered() {}');
+    fs.writeFileSync(path.join(h.root, 'new.js'), 'function created() {}');
+    const retried = await h.run('sync_task', { taskId: 'task' });
+    assert.equal(retried.graphSynced, 2);
+    assert.deepEqual(retried.failedFiles, []);
+});
+
+test('the task creator and lead agents may complete a task; strangers may not', async t => {
+    const h = await fixture(t);
+    await h.session.run("MATCH (t:Task {taskId:'task'}) SET t.status='in_progress', t.assignedTo='worker-gone', t.createdBy='creator' CREATE (:Task {taskId:'led', status:'in_progress', assignedTo:'worker-gone', createdBy:'someone'})");
+    const denied = await h.run('complete_task', { taskId: 'task', agentId: 'stranger' });
+    assert.equal(denied.status, 'NOT_OWNER');
+    assert.equal(denied.isError, true);
+    assert.match(denied.message, /task creator/);
+    const byCreator = await h.run('complete_task', { taskId: 'task', agentId: 'creator' });
+    assert.equal(byCreator.status, 'OK');
+    assert.equal(byCreator.newStatus, 'review');
+    assert.equal((await h.run('complete_task', { taskId: 'led', agentId: 'lead-agent' })).status, 'OK');
+});
+
+test('agents are told that review is terminal when they try to mark a task done', async t => {
+    const h = await fixture(t);
+    const result = await h.run('update_task_status', { taskId: 'task', status: 'done', agentId: 'worker-a' });
+    assert.equal(result.status, 'FORBIDDEN');
+    assert.match(result.hint, /review' is the terminal state/);
+});
+
+test('a blocked wave gate names the open tasks and treats review as finished', async t => {
+    const h = await fixture(t);
+    await h.session.run("CREATE (:Task {taskId:'open', title:'Open work', status:'in_progress', assignedTo:'worker-a', wave:1})");
+    const result = await h.run('complete_wave', { waveId: 1 });
+    assert.equal(result.status, 'GATE_BLOCKED');
+    assert.deepEqual(result.openTasks.map(task => task.taskId), ['open']);
+    assert.match(result.hint, /\(open\)/);
+    assert.match(result.hint, /review counts as finished/);
+    await h.session.run("MATCH (t:Task {taskId:'open'}) SET t.status='review'");
+    assert.equal((await h.run('complete_wave', { waveId: 1 })).status, 'OK');
 });
 
 test('wave planning supports dependency chains longer than twenty waves', async t => {
@@ -152,6 +209,7 @@ test('Windows drive letters do not merge unrelated workflow execution groups', (
 
 test('a failed wave sync leaves the next wave pending and succeeds after file repair', async t => {
     const h = await fixture(t);
+    fs.writeFileSync(path.join(h.root, 'repair.js'), 'function {');
     await h.session.run("MATCH (t:Task {taskId:'task'}) CREATE (n:File {path:'repair.js'}) CREATE (t)-[:AFFECTS]->(n) CREATE (:Task {taskId:'next', wave:2, status:'backlog', waveStatus:'pending'})");
     assert.equal((await h.run('complete_wave', { waveId: 1 })).status, 'SYNC_FAILED');
     const nextStatus = async () => (await h.session.run("MATCH (t:Task {taskId:'next'}) RETURN t.status AS status")).records[0].get('status');
@@ -159,4 +217,42 @@ test('a failed wave sync leaves the next wave pending and succeeds after file re
     fs.writeFileSync(path.join(h.root, 'repair.js'), 'function repaired() {}');
     assert.equal((await h.run('complete_wave', { waveId: 1 })).status, 'OK');
     assert.equal(await nextStatus(), 'todo');
+});
+
+test('wave synchronization skips deleted and unsupported files instead of blocking the wave', async t => {
+    const h = await fixture(t);
+    fs.writeFileSync(path.join(h.root, 'config.json'), '{}');
+    await h.session.run("MATCH (t:Task {taskId:'task'}) CREATE (a:File {path:'gone.js'}) CREATE (b:File {path:'config.json'}) CREATE (t)-[:AFFECTS]->(a) CREATE (t)-[:AFFECTS]->(b)");
+    const result = await commitSyncWave(1, h.driver);
+    assert.equal(result.status, 'OK');
+    assert.deepEqual(result.skippedFiles.map(f => f.file).sort(), ['config.json', 'gone.js']);
+});
+
+test('synchronization picks up files the touch-recorder journaled and attributes their functions', async t => {
+    const h = await fixture(t);
+    const source = 'function helper() { return 1; }\n\nfunction renewLimit(loan) {\n  return loan.renewCount < 2;\n}\n';
+    fs.writeFileSync(path.join(h.root, 'fresh.js'), source);
+    const { appendJournal, withSnippets, readJournal } = require('../lib/touch-journal.cjs');
+    appendJournal(h.root, { taskId: 'task', file: 'fresh.js', kind: 'Write', ranges: withSnippets([{ start: 3, end: 5 }], source) });
+
+    const result = await h.run('sync_task', { taskId: 'task' });
+    assert.equal(result.status, 'OK');
+    assert.equal(result.attributedEdits.edits, 1);
+    const touched = await h.session.run("MATCH (:Task {taskId:'task'})-[:TOUCHED]->(f:Function) RETURN f.name AS name");
+    assert.deepEqual(touched.records.map(r => r.get('name')), ['renewLimit']);
+    assert.equal(readJournal(h.root, 'task').length, 1, 'sync_task keeps the journal for complete_task');
+});
+
+test('a field inserted above a method is credited to its class, not to the method', async t => {
+    const h = await fixture(t);
+    const source = 'class Loan {\n  returnedAt = null;\n  renewCount = 0;\n  close(at) { this.returnedAt = at; }\n}\n';
+    fs.writeFileSync(path.join(h.root, 'loan.js'), source);
+    // Class nodes come from the full build; the per-file sync only re-parses functions.
+    await h.session.run("CREATE (:Class {name:'Loan', file:'loan.js', startLine:1, endLine:5})");
+    const { appendJournal, withSnippets } = require('../lib/touch-journal.cjs');
+    appendJournal(h.root, { taskId: 'task', file: 'loan.js', kind: 'Edit', ranges: withSnippets([{ start: 3, end: 3 }], source) });
+
+    await h.run('sync_task', { taskId: 'task' });
+    const touched = await h.session.run("MATCH (:Task {taskId:'task'})-[:TOUCHED]->(n) WHERE n:Function OR n:Class RETURN n.name AS name");
+    assert.deepEqual(touched.records.map(r => r.get('name')).sort(), ['Loan']);
 });

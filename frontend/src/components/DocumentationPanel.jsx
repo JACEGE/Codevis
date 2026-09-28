@@ -68,8 +68,12 @@ function splitDocumentation(markdown, currentPath = 'README.md') {
     };
 }
 
-export default function DocumentationPanel() {
-    const [documentPath, setDocumentPath] = useState('README.md');
+const guides = { overview: 'CodeVis overview', changes: 'Using CodeFlow', architecture: 'CodeFlow architecture' };
+const guidePaths = { overview: 'README.md', changes: 'docs/CHANGES_GUIDE.md', architecture: 'docs/CHANGE_INTELLIGENCE.md' };
+export default function DocumentationPanel({ guide = 'overview', onGuideChange }) {
+    const [documentPath, setDocumentPath] = useState(guidePaths[guide] || 'README.md');
+    useEffect(() => { setDocumentPath(guidePaths[guide] || 'README.md'); }, [guide]);
+    const selectedGuide = Object.keys(guidePaths).find(key => guidePaths[key] === documentPath) || '';
     const [markdown, setMarkdown] = useState('');
     const [error, setError] = useState(null);
     const [pendingAnchor, setPendingAnchor] = useState('');
@@ -77,6 +81,7 @@ export default function DocumentationPanel() {
 
     useEffect(() => {
         let alive = true;
+        setMarkdown('');
         setError(null);
         fetch(`${BRIDGE_URL}/api/docs?file=${encodeURIComponent(documentPath)}`)
             .then((response) => {
@@ -119,12 +124,16 @@ export default function DocumentationPanel() {
 
     return (
         <div className="codevis-docs-shell" onClick={followAnchor}>
+            <label className="documentation-picker">Guide <select aria-label="Documentation guide" value={selectedGuide} onChange={event => { setDocumentPath(guidePaths[event.target.value]); onGuideChange?.(event.target.value); }}>
+                {!selectedGuide && <option value="">{documentPath}</option>}
+                {Object.entries(guides).map(([key, title]) => <option key={key} value={key}>{title}</option>)}
+            </select></label>
             {error ? (
                 <div className="codevis-docs-error">Could not load {BRIDGE_URL}/api/docs — {error}</div>
             ) : (
                 <div className="codevis-docs">
                     <header className="codevis-docs-header">
-                        <h1>CodeVis Documentation</h1>
+                        <h1>{guides[selectedGuide] || 'CodeVis Documentation'}</h1>
                         <p>
                             {documentPath !== 'README.md' && <><button type="button" onClick={() => setDocumentPath('README.md')}>README</button>{' '}</>}
                             Choose a chapter. Only the section you need is expanded.
@@ -136,7 +145,7 @@ export default function DocumentationPanel() {
                             <a href={`#${section.id}`} key={section.id}>{section.heading}</a>
                         ))}
                     </div>
-                    <div className="codevis-docs-sections">
+                    <div key={documentPath} className="codevis-docs-sections">
                         <details className="codevis-docs-section">
                             <summary id="documentation-introduction">Introduction</summary>
                             <div

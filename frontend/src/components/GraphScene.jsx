@@ -1,3 +1,4 @@
+import { createWorkflowGeometries, paintWorkflowNode, workflowType } from '../graph/workflowShapes';
 import { useRef, useCallback, useMemo, useEffect, useState } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
 import ForceGraph2D from 'react-force-graph-2d';
@@ -118,6 +119,9 @@ const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, 
         if (agentId === 'lead' || agentId.startsWith('lead-')) return LEAD_COLOR;
         return WORKER_COLOR;
     }, []);
+
+    const workflowGeometries = useMemo(() => createWorkflowGeometries(THREE, NODE_BASE_SIZE), []);
+    useEffect(() => () => disposeResourceMap(workflowGeometries), [workflowGeometries]);
 
     // --- Cached geometries for node shapes (Knowledge=cylinder, Task=octahedron) ---
     const knowledgeGeo = useMemo(() => new THREE.CylinderGeometry(NODE_BASE_SIZE * 0.8, NODE_BASE_SIZE * 0.8, NODE_BASE_SIZE * 0.6, 16), []);
@@ -390,7 +394,9 @@ const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, 
         // down — it is a wireframe compound, not a single solid, so it does not
         // fit this "one geometry, one mesh" shape.
         let geometry;
-        if (node.labels?.includes('Knowledge')) {
+        if (workflowType(node.labels)) {
+            geometry = workflowGeometries[workflowType(node.labels)];
+        } else if (node.labels?.includes('Knowledge')) {
             geometry = knowledgeGeo;
         } else if (node.labels?.includes('Task')) {
             geometry = taskGeo;
@@ -445,7 +451,7 @@ const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, 
         // where they carry meaning (domain nodes, hubs, anything emphasised)
         // and rely on the hover tooltip for the rest.
         const labels = node.labels || [];
-        const isDomainNode = labels.includes('Task') || labels.includes('Knowledge')
+        const isDomainNode = Boolean(workflowType(labels)) || labels.includes('Task') || labels.includes('Knowledge')
             || labels.includes('Architect') || labels.includes('Endpoint')
             || labels.includes('Module') || labels.includes('Component');
         const isEmphasised = isDebugActive || isBranch || isTrail || isConflict || isLocked
@@ -792,7 +798,9 @@ const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, 
         ctx.strokeStyle = darkTheme ? 'rgba(226,232,240,0.34)' : 'rgba(30,41,59,0.28)';
         ctx.lineWidth = 0.6;
 
-        if (isTask) {
+        if (paintWorkflowNode(ctx, workflowType(labels), node.x, node.y, r)) {
+            // Workflow glyph drawn by the shared semantic presentation helper.
+        } else if (isTask) {
             // Diamant / Kristall
             ctx.beginPath();
             ctx.moveTo(node.x, node.y - r);
@@ -817,7 +825,7 @@ const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, 
 
         // Label — immer für Task/Knowledge/Architect/Highlight/Debug, sonst nur
         // beim Reinzoomen, damit der Überblick nicht zugepflastert wird.
-        const important = isTask || isKnowledge || isArchitect
+        const important = Boolean(workflowType(labels)) || isTask || isKnowledge || isArchitect
             || highlightedNodes?.has(node.name) || node.id === debugNode;
         if ((important || globalScale > 2.2) && node.name) {
             const fontSize = Math.max(2.5, 11 / globalScale);

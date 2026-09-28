@@ -1,3 +1,4 @@
+import CreateFlowDialog from './CreateFlowDialog';
 import { useState, useEffect, useCallback, useRef } from 'react';
 
 import BRIDGE_URL from '../bridgeUrl';
@@ -32,6 +33,8 @@ const IDEA_INTENTS = [
     { key: 'task', label: 'Task', color: '#0369a1' },
     { key: 'epic', label: 'Epic', color: '#7c3aed' },
     { key: 'knowledge', label: 'Know', color: '#0d9488' },
+    { key: 'epic-tasks', label: 'Epic + Tasks', color: '#7c3aed' },
+    { key: 'codeflow', label: 'CodeFlow', color: '#b45309' },
 ];
 
 const COLUMNS = [
@@ -76,7 +79,8 @@ const PRIORITY_BADGE = {
 };
 
 
-export default function KanbanBoard({ onCardHover, db: dbProp, socket, onShowNode }) {
+export default function KanbanBoard({ onCardHover, db: dbProp, socket, onShowNode, onOpenFlow }) {
+    const [promotionIdea,setPromotionIdea]=useState(null);
     const [tasks, setTasks] = useState([]);
     const taskUpdates = useRef(new WeakMap());
     const [creating, setCreating] = useState(null);
@@ -92,7 +96,7 @@ export default function KanbanBoard({ onCardHover, db: dbProp, socket, onShowNod
     // active DB once. Tasks created via MCP land in 'target' by default, so the
     // board must NOT be hardcoded to 'meta' (that showed an empty board).
     const [db, setDb] = useState(dbProp || 'project_db');
-    useEffect(() => { setCreating(null); }, [dbProp, db]);
+    useEffect(() => { setCreating(null); setPromotionIdea(null); }, [dbProp, db]);
     useEffect(() => {
         if (dbProp) { setDb(dbProp); return; }
         let cancelled = false;
@@ -146,7 +150,7 @@ export default function KanbanBoard({ onCardHover, db: dbProp, socket, onShowNod
 
     const {
         ideas, setIdeas,
-        newIdeaText, setNewIdeaText,
+        newIdeaText, setNewIdeaText, newIdeaKind, setNewIdeaKind,
         newIdeaIntent, setNewIdeaIntent,
         newIdeaPriority, setNewIdeaPriority,
         editingIdeaId, editingIdeaText, setEditingIdeaText,
@@ -366,6 +370,7 @@ export default function KanbanBoard({ onCardHover, db: dbProp, socket, onShowNod
                 </div>
             )}
 
+            {promotionIdea&&<CreateFlowDialog key={db+promotionIdea.ideaId} idea={promotionIdea} db={db} onClose={()=>setPromotionIdea(null)} onCreated={slug=>{setPromotionIdea(null);onOpenFlow?.(slug);}}/>}
             <div style={styles.board}>
                 <IdeaDumpColumn
                     column={IDEA_COLUMN}
@@ -391,7 +396,7 @@ export default function KanbanBoard({ onCardHover, db: dbProp, socket, onShowNod
                     onNewIntentChange={setNewIdeaIntent}
                     newPriority={newIdeaPriority}
                     onNewPriorityChange={setNewIdeaPriority}
-                    onCreate={createIdea}
+                    onCreate={createIdea} newKind={newIdeaKind} onNewKindChange={setNewIdeaKind} onPromoteFlow={setPromotionIdea}
                 />
 
                 {COLUMNS.filter((column) => column.key !== 'done').map((column) => (

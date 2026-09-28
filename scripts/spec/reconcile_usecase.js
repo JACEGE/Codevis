@@ -11,7 +11,7 @@
  *   relationConforms / relationMissing — include/extend vs CALLS
  *
  * Actors and actor→use-case associations are informational (passed through),
- * not a conformance check. Pure function — no Neo4j, no I/O.
+ * not a conformance check. Pure function — no database access, no I/O.
  */
 
 "use strict";

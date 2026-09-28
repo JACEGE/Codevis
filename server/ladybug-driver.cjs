@@ -1,20 +1,22 @@
 /**
  * ladybug-driver.cjs
  * ─────────────────────────────────────────────────────────────────────────
- * A drop-in compatibility shim for the slice of the `neo4j-driver` API that
- * the CodeVis app actually uses, backed by the Ladybug daemon
- * (server/ladybug-daemon.cjs). The app can `require('./ladybug-driver.cjs')`
- * in place of `require('neo4j-driver')` and keep its existing code:
+ * Embedded Ladybug client backed by server/ladybug-daemon.cjs.
+ * Production callers select a database explicitly:
  *
- *     const neo4j = require('./server/ladybug-driver.cjs');
- *     const d = neo4j.driver(uri, neo4j.auth.basic(user, pass));
+ *     const ladybug = require('./server/ladybug-driver.cjs');
+ *     const d = ladybug.workspace('project_db');
  *     const s = d.session();
- *     const r = await s.run('MATCH (n) WHERE n:Function RETURN id(n) AS id', {});
- *     for (const rec of r.records) rec.get('id').toNumber();
+ *     const result = await s.run('MATCH (n:Function) RETURN elementId(n) AS id');
+ *
+ * The record/transaction interface and Cypher translator are active Ladybug
+ * infrastructure. The legacy driver(uri, auth) entry point remains for older
+ * integrations; it does not connect to an external database server.
  *
  * Surface implemented (confirmed against server/bridge.js, tools/handlers/*,
  * scripts/runtime_profiler.js):
- *   - module.exports.driver(uri, authObj)
+ *   - module.exports.workspace(name)
+ *   - module.exports.driver(uri, authObj) (legacy)
  *   - module.exports.auth.basic(user, pass)
  *   - module.exports.int(x)                       (Integer-like wrapper)
  *   - driver.session()  -> { run(cypher, params), close(), executeWrite(fn),
@@ -24,14 +26,14 @@
  *       records: Array<Record> AND the result object is iterable over records
  *       Record: .get(key), .keys (array), .has(key), iterable over values,
  *               .toObject()
- *   - Integer codec: every INT64/BigInt returned from the DB is wrapped in a
- *     neo4j-Integer-like shim: { toNumber(), toString(), valueOf(), low, high }.
+ *   - Integer codec: every INT64/BigInt returned from the DB is wrapped in an
+ *     Integer wrapper: { toNumber(), toString(), valueOf(), low, high }.
  *     Strings/booleans/null pass through; arrays/lists pass through with their
  *     int elements wrapped too.
  *
  * Translation + daemon plumbing:
  *   - run() calls translate(cypher); if injectNow, binds __now=Date.now().
- *   - params are serialised: neo4j.int() wrappers and Integer shims are
+ *   - params are serialised: Integer wrappers and Integer shims are
  *     converted to JS BigInt (so Ladybug binds them as INT64); plain JS
  *     numbers that are integers are also sent as BigInt to match INT64 columns.
  *   - POSTs {db, cypher, params} to the daemon over loopback HTTP.
@@ -49,6 +51,7 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 
 const { translate } = require('./ladybug-translate.cjs');
+const { normalizeWorkspaceName } = require('../lib/workspace-names.cjs');
 
 // ── Daemon endpoint config ───────────────────────────────────────────────────
 // Shared with ladybug-daemon.cjs so client and daemon cannot disagree about the
@@ -65,11 +68,10 @@ const PIDFILE = paths.PIDFILE;
 // daemon's WRITE_RE so both sides agree on what counts as a mutating query.
 const WRITE_RE = /\b(CREATE|MERGE|SET|DELETE|REMOVE|DROP|COPY)\b/i;
 
-// ── neo4j Integer-like wrapper ───────────────────────────────────────────────
+// ── 64-bit Integer wrapper ───────────────────────────────────────────────
 // The app calls `.toNumber()`, `.toString()`, and relies on `valueOf()` for
 // arithmetic/comparison. We back it with a BigInt to stay lossless for values
-// beyond 2^53, while `.toNumber()` returns a JS Number (matches neo4j-driver,
-// which is also lossy for very large ints).
+// beyond 2^53. Converting to a JS Number with .toNumber() can lose precision.
 class Integer {
     constructor(bigintValue) {
         this._v = typeof bigintValue === 'bigint' ? bigintValue : BigInt(bigintValue);
@@ -95,17 +97,17 @@ class Integer {
     get [Symbol.toStringTag]() { return 'Integer'; }
 }
 
-/** neo4j.int(x): wrap a JS number / string / bigint into an Integer. */
+/** int(x): wrap a JS number / string / bigint into an Integer. */
 function int(x) {
     if (x instanceof Integer) return x;
     if (typeof x === 'bigint') return new Integer(x);
     if (typeof x === 'number') return new Integer(BigInt(Math.trunc(x)));
     if (typeof x === 'string') return new Integer(BigInt(x));
     if (x && typeof x.toBigInt === 'function') return new Integer(x.toBigInt());
-    throw new Error(`neo4j.int(): cannot convert ${typeof x}`);
+    throw new Error(`ladybug.int(): cannot convert ${typeof x}`);
 }
 
-// ── Decode daemon wire values into neo4j-shaped JS values ────────────────────
+// ── Decode daemon wire values into graph result values ────────────────────
 // The daemon tags INT64/BigInt as { __int64: "<decimal>" }. Rebuild Integer
 // shims; recurse into arrays and plain objects (lists / maps).
 function decodeValue(v) {
@@ -124,7 +126,7 @@ function decodeValue(v) {
 }
 
 // ── Encode params for the daemon (INT64-aware) ───────────────────────────────
-// neo4j callers pass either plain JS values, neo4j.int() wrappers, or arrays
+// Callers pass either plain JS values, Integer wrappers, or arrays
 // thereof. Ladybug binds JS BigInt to INT64 columns. To keep INT64 comparisons
 // (e.g. `WHERE id(n) IN $ids`, lock timestamps) correct, integers are sent as
 // BigInt. Wire transport is JSON, which can't carry BigInt, so we tag the same
@@ -140,11 +142,7 @@ function encodeParam(v) {
         if (Number.isInteger(v)) return { __int64: String(v) };
         return v; // float → DOUBLE
     }
-    // Real neo4j-driver Integer: the MCP handlers import the genuine neo4j-driver
-    // for `neo4j.int(...)` even in Ladybug mode, so the value is NOT an instance
-    // of our compat Integer above. Duck-type it (low/high/toNumber) and send as
-    // INT64; without this it would fall into the generic-object branch and be
-    // mangled into `{low:…, high:…}`.
+    // Accept compatible Integer wrappers from external callers.
     if (typeof v === 'object' && !Array.isArray(v)
         && typeof v.toNumber === 'function'
         && typeof v.low === 'number' && typeof v.high === 'number') {
@@ -458,11 +456,9 @@ function ensureDaemon() {
 }
 
 // ── DB selection (meta vs target) ─────────────────────────────────────────────
-// The app distinguishes workspaces purely by dbUri (see codevis.config.cjs:
-// meta=bolt://localhost:7688, target=bolt://localhost:7687) and by the driver
-// instance it holds (bridge.getTaskDriver, mcp_server targetDriver/metaDriver).
-// We map the known meta URI → 'meta', everything else → 'target'. The mapping
-// is also overridable so an embedding app can be explicit.
+// Only the legacy driver(uri, auth) API uses URI heuristics. Production code
+// calls workspace(name), which validates the name and bypasses this mapping.
+// Keep old integrations working without moving or opening different DB files.
 const META_URI_HINTS = [
     process.env.CODEVIS_META_URI || process.env.NEO4J_META_URI || 'bolt://localhost:7688',
 ];
@@ -484,7 +480,7 @@ class Record {
         this._obj = obj || {};
         this.keys = Object.keys(this._obj);
         this.length = this.keys.length;
-        // neo4j Records expose values via index too; build an ordered array.
+        // Records also expose values by index; build an ordered array.
         this._values = this.keys.map((k) => this._obj[k]);
     }
     get(key) {
@@ -494,7 +490,7 @@ class Record {
     has(key) { return Object.prototype.hasOwnProperty.call(this._obj, key); }
     toObject() { return { ...this._obj }; }
     forEach(fn) { this.keys.forEach((k, i) => fn(this._obj[k], k, this)); }
-    // Iterable over values (neo4j Records iterate their field values).
+    // Iterate over record field values.
     *[Symbol.iterator]() { yield* this._values; }
 }
 
@@ -503,7 +499,7 @@ class Result {
         this.records = records;
         this.summary = summary || {};
     }
-    // neo4j Result is async-iterable; the app mostly uses .records, but we make
+    // Results are async-iterable; the app mostly uses .records, but we make
     // the result iterable over records for `for (const r of result)` ergonomics.
     *[Symbol.iterator]() { yield* this.records; }
 }
@@ -522,6 +518,17 @@ class Session {
     }
 
     get workspace() { return require('../lib/workspace-names.cjs').publicWorkspaceName(this._db); }
+
+    async changeOperation(options) {
+        if (this._closed) throw new Error('session is closed');
+        await ensureDaemon();
+        const { status, json } = await httpPostJson('/changes/operation', {
+            db: this._db, options, reqId: crypto.randomUUID(),
+        });
+        if (status === 404) throw new Error('Restart CodeVis to load Change workflow support.');
+        if (status !== 200 || json.error) throw new Error(json.error || 'Change operation HTTP ' + status);
+        return json.result;
+    }
 
     async importSpecAtomic(options) {
         if (this._closed) throw new Error('session is closed');
@@ -703,35 +710,27 @@ class Session {
 // ── Driver ────────────────────────────────────────────────────────────────────
 
 class Driver {
-    constructor(uri, authObj) {
+    constructor(uri, authObj, db = pickDb(uri, authObj)) {
         this._uri = uri;
         this._auth = authObj;
-        this._db = pickDb(uri, authObj);
+        this._db = db;
     }
-    /**
-     * Die Datenbank steht am TREIBER, nicht an der Session.
-     *
-     * neo4j erlaubt `driver.session({ database: 'meta' })`, und genau so schreibt
-     * es jeder, der die echte Bibliothek kennt. Hier ist das Argument wirkungslos:
-     * welche Datenbank gemeint ist, entschied schon `pickDb()` an der URI
-     * (`bolt://localhost:7688` -> meta, alles andere -> target). Ein
-     * `session({database:'meta'})` auf einem Treiber mit der Standard-URI liefert
-     * also stillschweigend die ZIELdatenbank.
-     *
-     * Das ist mir in dieser Sitzung selbst passiert: mehrere Diagnose-Abfragen
-     * gegen 'meta' landeten in 'target', meldeten 80 statt 100.789 Knoten, und
-     * ich hielt einen intakten Graphen fuer geloescht. Kein Produktionscode
-     * benutzt die Form -- deshalb wirft das hier nicht, sondern erklaert. Wer
-     * die Datenbank waehlen will, waehlt sie beim Anlegen des Treibers.
-     */
-    session(/* config: von dieser Nachbildung ignoriert, siehe oben */) { return new Session(this._db); }
+    // Sessions inherit the driver's workspace. Select another database by
+    // opening another workspace, not through session options.
+    session() { return new Session(this._db); }
     async close() { /* connections live in the daemon; nothing to tear down here */ }
     async verifyConnectivity() { await ensureDaemon(); return { address: `${DAEMON_HOST}:${activePort}` }; }
     async getServerInfo() { return { address: `${DAEMON_HOST}:${activePort}` }; }
 }
 
-// ── Public module surface (mirrors neo4j-driver) ──────────────────────────────
+// ── Public module surface ──────────────────────────────
 
+/** Open an embedded workspace explicitly, without network addresses or credentials. */
+function workspace(name = 'project_db') {
+    return new Driver(undefined, undefined, normalizeWorkspaceName(name));
+}
+
+// Compatibility entry point for older integrations using synthetic URIs.
 function driver(uri, authObj /*, config */) {
     return new Driver(uri, authObj);
 }
@@ -868,6 +867,7 @@ async function stopDaemon({ timeoutMs = 20000 } = {}) {
 }
 
 module.exports = {
+    workspace,
     driver,
     auth,
     int,

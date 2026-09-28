@@ -47,7 +47,7 @@ export default function NodeSearchDialog({ db, onClose, onSelect }) {
                 <h2 id="node-search-title">Find code and work</h2>
                 <button type="button" className="ui-button" onClick={onClose}>Close</button>
             </div>
-            <p>Search files, functions, classes, modules, endpoints, tasks, epics and knowledge in {db}. Results include items outside the visible graph.</p>
+            <p>Search source code, tasks, epics, knowledge and CodeFlow evidence in {db}. Results include items outside the visible graph.</p>
             <label htmlFor="node-search-input">Name or file path</label>
             <input id="node-search-input" autoFocus type="search" maxLength={200} value={query}
                 placeholder="For example: renderText or frontend/src"

@@ -3,6 +3,7 @@ import { io } from 'socket.io-client';
 import DocumentationPanel from './components/DocumentationPanel';
 import StatusBar from './components/StatusBar';
 import TerminalPanel from './components/TerminalPanel';
+import ChangesTab from './components/ChangesTab';
 import BrainTab from './components/BrainTab';
 import SpecTab, { DiagramsTab } from './components/SpecTab';
 import ClassDiagramTab from './components/ClassDiagramTab';
@@ -39,25 +40,26 @@ const WINDOW_RADIUS = 4; // Hop distance from call stack before nodes get hidden
 // outward from one node and lets you step along it. Note it is single-source —
 // it does not search for a route BETWEEN two nodes.
 const TABS = [
-    { key: 'kanban', label: 'Kanban', group: 'Work' },
-    { key: 'brain', label: 'Brain', group: 'Work' },
-    { key: 'spec', label: 'Spec', group: 'Work' },
-    { key: 'context', label: 'Context', group: 'Analyze' },
-    { key: 'inspector', label: 'Inspector', group: 'Analyze' },
-    { key: 'pathfinder', label: 'Pathfinder', group: 'Analyze' },
+    { key: 'changes', label: 'CodeFlow', group: 'Work', description: 'Requirements, tests and review for one requested change.' },
+    { key: 'kanban', label: 'Task board', group: 'Work', description: 'Implementation Tasks, assignments and progress.' },
+    { key: 'brain', label: 'Ideas', group: 'Work', description: 'Capture rough thoughts and turn them into linked work.' },
+    { key: 'spec', label: 'Specs', group: 'Work', description: 'Design diagrams linked to their implementation.' },
+    { key: 'context', label: 'Knowledge', group: 'Analyze', description: 'Find project knowledge, decisions and related work.' },
+    { key: 'inspector', label: 'Inspector', group: 'Analyze', description: 'Read the selected node, its source and relationships.' },
+    { key: 'pathfinder', label: 'Pathfinder', group: 'Analyze', description: 'Follow call paths between code symbols.' },
     // Explore sits with the other tabs that answer questions about the graph
     // in front of you (Kanban, Knowledge, Inspector, Pathfinder). It used to be
     // parked between ROS 2 and Diagrams, behind the domain and document tabs,
     // where it was reached last despite being the everyday one.
-    { key: 'explore', label: 'Explore', group: 'Analyze' },
-    { key: 'classes', label: 'Classes', group: 'Model' },
+    { key: 'explore', label: 'Queries', group: 'Analyze', description: 'Run predefined checks or read-only graph queries.' },
+    { key: 'classes', label: 'Classes', group: 'Model', description: 'Class relationships derived from source code.' },
     // Domain tab: only rendered for projects whose ROS extractor is on. It stays
     // in this list rather than being spliced in at render time so the tab order
     // is readable in one place; renderTabBar drops it when the flag is off.
     { key: 'ros', label: 'ROS 2', group: 'Model', requiresExtractor: 'ros' },
-    { key: 'diagrams', label: 'Diagrams', group: 'Model' },
-    { key: 'documentation', label: 'Docs', group: 'System' },
-    { key: 'settings', label: 'Settings', group: 'System' },
+    { key: 'diagrams', label: 'Diagrams', group: 'Model', description: 'Inspect sequence and architecture diagrams.' },
+    { key: 'documentation', label: 'Docs', group: 'System', description: 'Getting started, Change workflow and architecture guides.' },
+    { key: 'settings', label: 'Settings', group: 'System', description: 'Workspace configuration, graph scope and display preferences.' },
 ];
 
 // Above this visible-node count the 3D renderer (one THREE mesh + sprite per node)
@@ -96,6 +98,9 @@ const HIDDEN_LINK_TYPES = new Set([
 ]);
 
 function App() {
+    const [pendingFlow,setPendingFlow]=useState(null);
+    const [flowTrace,setFlowTrace]=useState(null);
+    const [documentationGuide, setDocumentationGuide] = useState('overview');
     const [graphData, setGraphData] = useState({ nodes: [], links: [] });
     // Null means no response yet; zero is a successfully loaded empty graph.
     const [receivedGraphNodeCount, setReceivedGraphNodeCount] = useState(null);
@@ -662,6 +667,15 @@ function App() {
         showContextSubgraph(id);
     };
 
+    const showCodeFlowTrace = useCallback(async nodeId => {
+        const current=beginGraphRequest();setContextRequest({nodeId,operation:'codeflow',pending:true,isCurrent:current});
+        try{
+            const response=await fetch(BRIDGE_URL+'/api/flows/trace/'+encodeURIComponent(nodeId)+'?db='+encodeURIComponent(activeDb),{signal:AbortSignal.timeout(60000)});
+            const result=await response.json();if(!current())return;if(!response.ok)throw new Error(result.error||'Trace failed');
+            setRouteResult(null);setFocusNodeId(null);setExploreGraphData(result.graph);setFlowTrace(result);setSelectedNode(nodeId);setNodeActionMenu(null);setContextRequest(null);setWorkspaceLayout('split');
+        }catch(error){if(current())setContextRequest({nodeId,operation:'codeflow',pending:false,isCurrent:current,error:error.message});}
+    },[activeDb]);
+    useEffect(()=>{setFlowTrace(null);setPendingFlow(null);},[activeDb]);
     const highlightInspectorRelationship = useCallback(async ({ source, target, relType }) => {
         const current = captureGraphRequest();
         const linkKey = `${source}->${target}`;
@@ -1039,7 +1053,9 @@ function App() {
     const fullScreenView = fullScreen ? (
             <FullScreenTabShell workspaceReady={workspaceReady} projectRoot={projectRoot} onSearch={() => setSearchOpen(true)} activeDb={activeDb} activeTab={rightTab} bridgeUrl={BRIDGE_URL} connected={connected} extractors={extractors} onSelectTab={selectTab} tabs={TABS} navigation={navigation}
                 onLayoutChange={layout => { if (layout !== 'panel') { setRightTab('kanban'); setWorkspaceLayout(layout); } }}>
-                {rightTab === 'brain'
+                {rightTab === 'changes'
+                    ? <ChangesTab key={activeDb} initialSlug={pendingFlow} onInitialConsumed={()=>setPendingFlow(null)} onOpenGuide={() => { setDocumentationGuide('changes'); selectTab('documentation'); }} db={activeDb} socket={socket} onShowNode={id => { selectTab('inspector'); setWorkspaceLayout('split'); showContextSubgraph(id); }} />
+                    : rightTab === 'brain'
                     ? <BrainTab key={activeDb} socket={socket} db={activeDb} />
                     : rightTab === 'spec'
                         ? <SpecTab key={activeDb} socket={socket} db={activeDb} pendingSpecId={pendingSpec} onPendingConsumed={() => setPendingSpec(null)} />
@@ -1049,7 +1065,7 @@ function App() {
                             ? <RosTab db={activeDb} />
                             : rightTab === 'diagrams'
                                         ? <DiagramsTab db={activeDb} onOpen={(specId) => { setPendingSpec(specId); selectTab('spec'); }} />
-                                        : <DocumentationPanel />}
+                                        : <DocumentationPanel guide={documentationGuide} onGuideChange={setDocumentationGuide} />}
             </FullScreenTabShell>
     ) : null;
 
@@ -1108,6 +1124,7 @@ function App() {
                 onDrag={horizontalSplit.setDragging} dragging={horizontalSplit.dragging} defaultValue={0.5} />
 
             <GraphPanel
+                onTraceCodeFlow={showCodeFlowTrace} traceResult={exploreGraphData===flowTrace?.graph?flowTrace:null} onOpenFlow={slug=>{setPendingFlow(slug);selectTab('changes');}}
                 contextRequest={contextRequest?.isCurrent() ? contextRequest : null}
                 active={!fullScreen && workspaceLayout !== 'panel'}
                 detailLevel={detailLevel}
@@ -1156,6 +1173,7 @@ function App() {
 
 
             <DashboardSidePanel
+                onTraceCodeFlow={showCodeFlowTrace}
                 activeDb={activeDb}
                 activeTab={rightTab}
                 connected={connected}
@@ -1200,6 +1218,7 @@ function App() {
                     setDfsTree(null);
                     setTraceDirection(direction);
                 }}
+                onOpenFlow={slug=>{setPendingFlow(slug);selectTab('changes');}}
                 onShowContext={showContextSubgraph}
                 onStepChange={handleStepChange}
                 pending={scopePending}

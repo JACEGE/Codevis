@@ -7,6 +7,7 @@ const path = require('node:path');
 require('../lib/tsx-userinfo-preload.cjs');
 require('tsx/cjs/api').register();
 const parser = require('../tools/lib/treesitter.ts');
+const { SKIP_WITHOUT_FILE_SYMLINKS } = require('./helpers/symlinks.cjs');
 
 function harness(intervene, options = {}) {
     const filename = path.resolve(__dirname, '../tools/handlers/edit-tools.ts');
@@ -43,7 +44,7 @@ function harness(intervene, options = {}) {
 }
 const edits = ['a.js', 'b.js'].map(file => ({ file, functionName: 'work', oldString: 'return 1', newString: 'return 2' }));
 
-test('multi-file edits merge two symlink aliases without replacing either link', async t => {
+test('multi-file edits merge two symlink aliases without replacing either link', { skip: SKIP_WITHOUT_FILE_SYMLINKS }, async t => {
     const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'codevis-multi-links-'));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const actual = path.join(root, 'actual.js');

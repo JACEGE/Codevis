@@ -8,6 +8,7 @@ const ts = require('typescript');
 require('../lib/tsx-userinfo-preload.cjs');
 require('tsx/cjs/api').register();
 const parser = require('../tools/lib/treesitter.ts');
+const { SKIP_WITHOUT_FILE_SYMLINKS } = require('./helpers/symlinks.cjs');
 
 function harness(t, fault, options = {}) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codevis-insert-'));
@@ -65,7 +66,7 @@ test('valid insertion writes the code and keeps a recovery backup', async t => {
     assert.equal(fs.readFileSync(path.join(h.root, 'backup.bak'), 'utf8'), h.original);
 });
 
-test('inserting through a symbolic link updates the target without replacing the link', async t => {
+test('inserting through a symbolic link updates the target without replacing the link', { skip: SKIP_WITHOUT_FILE_SYMLINKS }, async t => {
     const h = harness(t);
     const target = path.join(h.root, 'real.js');
     fs.renameSync(h.file, target); fs.symlinkSync(target, h.file, 'file');

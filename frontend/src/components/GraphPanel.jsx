@@ -1,5 +1,7 @@
 import GraphFilter from './GraphFilter';
-import { useRef, useState } from 'react';
+import GraphPerspectiveControls from './GraphPerspectiveControls';
+import { perspectiveGraph, GRAPH_PRESETS } from '../graph/perspectives';
+import { useRef, useState, useMemo, useEffect } from 'react';
 import GraphLegend from './GraphLegend';
 import GraphScene from './GraphScene';
 import ViewModeToggle from './ViewModeToggle';
@@ -7,7 +9,7 @@ import GraphEmptyState from './GraphEmptyState';
 import GraphScopeError from './GraphScopeError';
 import useElementSize from '../hooks/useElementSize';
 
-function NodeActionMenu({ menu, onClose, onInspect, onShowContext, pending }) {
+function NodeActionMenu({ menu, onClose, onInspect, onShowContext, onTraceCodeFlow, pending }) {
     if (!menu) return null;
     return (
         <div style={{
@@ -20,13 +22,14 @@ function NodeActionMenu({ menu, onClose, onInspect, onShowContext, pending }) {
             <button className="ui-button ui-button--primary" onClick={onInspect}>Inspect</button>
             <button className="ui-button" disabled={pending} onClick={() => onShowContext(menu.nodeId, 1)}>Direct connections</button>
             <button className="ui-button" disabled={pending} onClick={() => onShowContext(menu.nodeId, 2)}>Surrounding context</button>
+            <button className="ui-button" disabled={pending} onClick={()=>onTraceCodeFlow(menu.nodeId)}>Trace → CodeFlow context</button>
             <button aria-label="Close node actions" onClick={onClose} style={{ padding: '6px 8px', cursor: 'pointer' }}>×</button>
         </div>
     );
 }
 
 export default function GraphPanel({
-    contextRequest,
+    contextRequest, onTraceCodeFlow, traceResult, onOpenFlow,
     active = true,
     detailLevel,
     onDetailLevelChange,
@@ -71,6 +74,10 @@ export default function GraphPanel({
     viewMode,
     visibleGraphData,
 }) {
+    const [preset,setPreset]=useState('all'),[hiddenEdges,setHiddenEdges]=useState(new Set()),[showTestSource,setShowTestSource]=useState(true);
+    useEffect(()=>{if(traceResult){setPreset('all');setHiddenEdges(new Set());setShowTestSource(true);}},[traceResult]);
+    const shownGraph=useMemo(()=>perspectiveGraph(visibleGraphData,preset,hiddenEdges,showTestSource),[visibleGraphData,preset,hiddenEdges,showTestSource]);
+    const relations=[...new Set(visibleGraphData.links.map(l=>l.relType))].sort();
     const canvasRef = useRef(null);
     const size = useElementSize(canvasRef);
     const [fitRequest, setFitRequest] = useState(0);
@@ -93,6 +100,7 @@ export default function GraphPanel({
                     isolatedCount={graphScope?.isolated || 0} includeIsolated={includeIsolated}
                     onIncludeIsolatedChange={onIncludeIsolatedChange} pending={scopePending}
                 />
+                <GraphPerspectiveControls preset={preset} onPreset={value=>{setPreset(value);const allowed=GRAPH_PRESETS[value].edges;setHiddenEdges(new Set(allowed?relations.filter(r=>!allowed.includes(r)):[]));}} relations={relations} hidden={hiddenEdges} onHidden={setHiddenEdges} showTestSource={showTestSource} onShowTestSource={setShowTestSource}/>
                 <select aria-label="Graph detail" value={detailLevel} onChange={event => onDetailLevelChange(Number(event.target.value))}>
                     <option value={1}>Architecture</option><option value={2}>Code detail</option><option value={3}>Syntax tree</option>
                 </select>
@@ -105,7 +113,7 @@ export default function GraphPanel({
                 active={active}
                 fitRequest={fitRequest}
                 width={size.width} height={size.height}
-                graphData={visibleGraphData} palette={palette} activeLinks={activeLinks}
+                graphData={shownGraph} palette={palette} activeLinks={activeLinks}
                 debugNode={selectedNode} debugPath={debugPath}
                 debugBranches={sequentialMode ? [] : debugBranches}
                 debugEdges={Array.from(activeLinks)} freezeLayout={freezeLayout}
@@ -115,7 +123,7 @@ export default function GraphPanel({
             <NodeActionMenu
                 pending={contextRequest?.pending}
                 menu={nodeActionMenu} onClose={onCloseNodeActions}
-                onInspect={onInspectNode} onShowContext={onShowContext}
+                onInspect={onInspectNode} onShowContext={onShowContext} onTraceCodeFlow={onTraceCodeFlow}
             />
             {sourceGraphEmpty && !exploreGraphActive && (
                 <GraphEmptyState
@@ -126,13 +134,13 @@ export default function GraphPanel({
                     onResetFilters={() => onTypeVisibilityChange?.({})}
                 />
             )}
-            <GraphLegend nodes={visibleGraphData.nodes} palette={palette} />
+            <GraphLegend nodes={shownGraph.nodes} palette={palette} />
             {contextRequest && <div style={{ position: 'absolute', bottom: 16, left: 16, right: 16, zIndex: 180 }}>
                 {contextRequest.pending
                     ? <div role="status" style={{ padding: '8px 12px', background: 'var(--surface)', color: 'var(--text)', borderRadius: 6 }}>
-                        Loading {contextRequest.hops === 1 ? 'direct connections' : 'surrounding context'}…
+                        Loading {contextRequest.operation==='codeflow'?'CodeFlow trace':contextRequest.hops === 1 ? 'direct connections' : 'surrounding context'}…
                     </div>
-                    : <GraphScopeError error={contextRequest.error} onRetry={() => onShowContext(contextRequest.nodeId, contextRequest.hops)} />}
+                    : <GraphScopeError error={contextRequest.error} onRetry={() => contextRequest.operation==='codeflow'?onTraceCodeFlow(contextRequest.nodeId):onShowContext(contextRequest.nodeId, contextRequest.hops)} />}
             </div>}
             {exploreGraphActive && !visibleGraphData.nodes.length && (
                 <div style={{ position: 'absolute', inset: '25% 12% auto', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
@@ -143,6 +151,11 @@ export default function GraphPanel({
                 <GraphScopeError error={scopeError} onRetry={onRetryScope} />
             </div>}
             <div className="graph-state">
+                {traceResult&&<details className="codeflow-trace-summary" open><summary>CodeFlow trace · {traceResult.flows.length} Flows · {traceResult.findings.length} gaps</summary>
+                    <p>{traceResult.note}</p>{traceResult.flows.map(flow=><button key={flow.slug} className="ui-button" onClick={()=>onOpenFlow(flow.slug)}>{flow.title}</button>)}
+                    {traceResult.findings.map((finding,i)=><button key={i} className="ui-button change-relation" onClick={()=>onNodeClick(finding.nodeId)}>{finding.message}</button>)}
+                </details>}
+                <small>{shownGraph.nodes.length} nodes · {shownGraph.links.length} edges in this perspective</small>
                 {focusNodeId != null && (
                     <button onClick={onClearFocus} title="Show the full graph again" style={{
                         display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',

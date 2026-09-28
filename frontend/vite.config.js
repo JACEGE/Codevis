@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 
 // The bridge's port is DERIVED from the project path (4000 + hash), so it
 // differs per project — for this one it is 4362, not 4000. In production the
@@ -24,17 +25,24 @@ const { BRIDGE_PORT, HOST } = require('../server/codevis-paths.cjs');
 //
 // An externally set VITE_BRIDGE_URL always wins, for pointing the UI at a
 // bridge other than this project's.
-export default defineConfig(({ command }) => {
+export default defineConfig(({ command, mode }) => {
+    // `vite build --mode demo`: a static bundle that replays a recorded bridge
+    // (src/demo). Relative base so it runs from any folder or static host.
+    const demo = mode === 'demo';
+    if (demo) process.env.VITE_DEMO = '1';
     if (command === 'serve' && !process.env.VITE_BRIDGE_URL) {
         const host = HOST === '127.0.0.1' ? 'localhost' : HOST;
         process.env.VITE_BRIDGE_URL = `http://${host}:${BRIDGE_PORT}`;
     }
     return {
         plugins: [react()],
+        base: demo ? './' : '/',
         resolve: {
-            dedupe: ['three']
+            dedupe: ['three'],
+            alias: demo ? { 'socket.io-client': fileURLToPath(new URL('./src/demo/demoSocket.js', import.meta.url)) } : {},
         },
         build: {
+            outDir: demo ? 'dist-demo' : 'dist',
             rollupOptions: {
                 output: {
                     manualChunks(id) {

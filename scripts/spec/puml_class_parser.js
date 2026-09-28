@@ -2,7 +2,7 @@
  * puml_class_parser.js — Pure parser for PlantUML CLASS diagrams.
  *
  * Turns class-diagram text into a normalized object describing classes (with
- * their methods/fields) and the relations between them. NO Neo4j, NO I/O.
+ * their methods/fields) and the relations between them. NO database access, NO I/O.
  *
  * Output shape:
  *   {

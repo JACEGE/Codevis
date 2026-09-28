@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, writeFile, rm, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, readFile, realpath } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { createReadStream } from "node:fs";
 import { createServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
 import { createRequire } from "node:module";
 import assert from "node:assert/strict";
+import { parse as parseToml } from "smol-toml";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { tmpdir } from "node:os";
@@ -247,6 +248,11 @@ try {
   };
   assert.equal(loadConfig().workMode, 'planning');
   assert.deepEqual(loadConfig().workspaces.project_db.sourceDir, []);
+  for (const workspace of Object.values(loadConfig().workspaces)) {
+    assert.equal(workspace.dbUri, undefined);
+    assert.equal(workspace.neo4jUri, undefined);
+    assert.equal(workspace.auth, undefined);
+  }
 
   step("Executing both installed hooks in the ESM project");
   for (const hook of ['lock-guard.cjs', 'bash-guard.cjs']) {
@@ -256,6 +262,22 @@ try {
     });
     assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'allow');
   }
+
+  step("Starting the generated Codex MCP command and checking its workspace");
+  const codexConfig = parseToml(await readFile(join(projectDir, '.codex/config.toml'), 'utf8')).mcp_servers.codevis_graph;
+  assert.equal(codexConfig.env.CODEVIS_ROLE, 'lead');
+  const expectedProjectRoot = await realpath(projectDir);
+  assert.equal(codexConfig.cwd, expectedProjectRoot);
+  mcp = new Client({ name: 'codex-init-smoke', version: '1.0' }, { capabilities: {} });
+  await mcp.connect(new StdioClientTransport({
+    ...codexConfig, env: { ...process.env, ...testEnv, ...codexConfig.env }, stderr: 'pipe',
+  }));
+  const identityResult = await mcp.callTool({ name: 'get_workspace_identity', arguments: {} });
+  assert.ok(!identityResult.isError, JSON.stringify(identityResult));
+  assert.equal(JSON.parse(identityResult.content[0].text).projectRoot, expectedProjectRoot);
+  assert.ok((await mcp.listTools()).tools.some(tool => tool.name === 'flow_write'));
+  await mcp.close();
+  mcp = null;
 
   step("Starting the generated MCP command and creating work before any code build");
   const mcpConfig = JSON.parse(await readFile(join(projectDir, '.mcp.json'), 'utf8')).mcpServers.codevis_graph;

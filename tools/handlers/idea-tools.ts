@@ -44,7 +44,8 @@ const fail = mcpErr;
 // Gespeichert auf vorhandenen Spalten: `category` trägt die Intent-Liste
 // (kommagetrennt), `priority` die Stufe. Eine eigene Spalte hätte eine
 // Migration der CodeNode-Tabelle gekostet, ohne etwas dazuzugewinnen.
-const IDEA_INTENTS = ["task", "epic", "knowledge"];
+const IDEA_INTENTS = ["task", "epic", "knowledge", "epic-tasks", "codeflow"];
+const IDEA_KINDS = ["feature", "bug", "refactor", "research", "architecture", "tech-debt"];
 const IDEA_PRIORITIES = ["critical", "high", "medium", "low"];
 
 function normalizeIntent(value: any): string | null {
@@ -73,6 +74,7 @@ const handlers: Record<string, ToolHandler> = {
     create_idea: async (args, ctx) => {
         const content = String(args.content || "").trim();
         if (!content) return fail("content is required");
+        if(args.kind!=null&&!IDEA_KINDS.includes(args.kind))return fail("Unknown idea kind");
         return withIdeaSession(args, ctx, async (session) => {
             const ideaId = generateWorkItemId('idea');
             const createdBy = args.createdBy || ctx.defaultAgentId || "user";
@@ -85,14 +87,14 @@ const handlers: Record<string, ToolHandler> = {
                     content: $content,
                     status: 'open',
                     createdBy: $createdBy,
-                    category: $intent,
+                    kind: $kind, category: $intent,
                     priority: $priority,
                     createdAt: timestamp(),
                     updatedAt: timestamp()
                 })`,
-                { ideaId, content, createdBy, intent, priority }
+                { ideaId, content, createdBy, intent, priority, kind:args.kind||null }
             );
-            return ok({ status: "OK", ideaId, content, createdBy, intent: intentToList(intent), priority });
+            return ok({ status: "OK", ideaId, content, createdBy, kind:args.kind||null, intent: intentToList(intent), priority });
         });
     },
 
@@ -105,13 +107,13 @@ const handlers: Record<string, ToolHandler> = {
                     ? `MATCH (i:Idea)
                        RETURN i.taskId AS ideaId, i.content AS content,
                               i.status AS status, i.createdBy AS createdBy,
-                              i.category AS intent, i.priority AS priority,
+                              i.category AS intent, i.kind AS kind, i.priority AS priority,
                               i.createdAt AS createdAt
                        ORDER BY i.createdAt`
                     : `MATCH (i:Idea) WHERE i.status = 'open'
                        RETURN i.taskId AS ideaId, i.content AS content,
                               i.status AS status, i.createdBy AS createdBy,
-                              i.category AS intent, i.priority AS priority,
+                              i.category AS intent, i.kind AS kind, i.priority AS priority,
                               i.createdAt AS createdAt
                        ORDER BY i.createdAt`
             );
@@ -120,8 +122,8 @@ const handlers: Record<string, ToolHandler> = {
                 content: r.get("content"),
                 status: r.get("status"),
                 createdBy: r.get("createdBy"),
-                // Was daraus werden soll, wie es am Board gesetzt wurde.
-                intent: intentToList(r.get("intent")),
+                // Keep kind independent from the suggested promotion targets.
+                kind: r.get("kind"), intent: intentToList(r.get("intent")),
                 priority: r.get("priority") || "",
             }));
             return ok(ideas);
@@ -135,18 +137,20 @@ const handlers: Record<string, ToolHandler> = {
         const content = String(args.content ?? "").trim();
         const intent = normalizeIntent(args.intent);
         const priority = normalizePriority(args.priority);
-        if (!content && intent === null && priority === null)
-            return fail("content, intent or priority is required");
+        if(args.kind!=null&&!IDEA_KINDS.includes(args.kind))return fail("Unknown idea kind");
+        if (!content && intent === null && priority === null && args.kind==null)
+            return fail("content, intent, kind or priority is required");
         return withIdeaSession(args, ctx, async (session) => {
             const result = await session.run(
                 `MATCH (i:Idea {taskId: $ideaId})
                  SET i.content = COALESCE($content, i.content),
                      i.category = COALESCE($intent, i.category),
+                     i.kind = COALESCE($kind, i.kind),
                      i.priority = COALESCE($priority, i.priority),
                      i.updatedAt = timestamp()
                  RETURN i.taskId AS ideaId, i.content AS content,
-                        i.category AS intent, i.priority AS priority`,
-                { ideaId: args.ideaId, content: content || null, intent, priority }
+                        i.category AS intent, i.kind AS kind, i.priority AS priority`,
+                { ideaId: args.ideaId, content: content || null, intent, priority,kind:args.kind||null }
             );
             if (result.records.length === 0) return fail(`Idea '${args.ideaId}' not found`);
             const r = result.records[0];
@@ -276,9 +280,10 @@ const definitions = [
                 createdBy: { type: "string", description: "Author. Defaults to the calling agent." },
                 intent: {
                     type: "array",
-                    items: { type: "string", enum: ["task", "epic", "knowledge"] },
+                    items: { type: "string", enum: IDEA_INTENTS },
                     description: "What the idea should become. Multiple allowed. A note, not a conversion — promotion still happens explicitly.",
                 },
+                kind: {type:"string",enum:IDEA_KINDS,description:"Nature of the idea, independently of its promotion target."},
                 priority: { type: "string", enum: ["critical", "high", "medium", "low"], description: "How urgent the idea is. Inherited by promote_idea_to_task." },
             },
             required: ["content"],
@@ -313,9 +318,10 @@ const definitions = [
                 content: { type: "string", description: "The new idea text." },
                 intent: {
                     type: "array",
-                    items: { type: "string", enum: ["task", "epic", "knowledge"] },
+                    items: { type: "string", enum: IDEA_INTENTS },
                     description: "What the idea should become. Multiple allowed; an empty array clears the choice.",
                 },
+                kind: {type:"string",enum:IDEA_KINDS,description:"Nature of the idea, independently of its promotion target."},
                 priority: { type: "string", enum: ["critical", "high", "medium", "low"], description: "How urgent the idea is." },
             },
             required: ["ideaId"],

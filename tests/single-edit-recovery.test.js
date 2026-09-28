@@ -8,6 +8,7 @@ require('../lib/tsx-userinfo-preload.cjs');
 require('tsx/cjs/api').register();
 const parser = require('../tools/lib/treesitter.ts');
 const { replaceFileSnapshot } = require('../tools/lib/edit-transaction.ts');
+const { SKIP_WITHOUT_FILE_SYMLINKS } = require('./helpers/symlinks.cjs');
 
 function harness(t, name, fault, options = {}) {
     const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'codevis-single-edit-'));
@@ -73,7 +74,7 @@ function harness(t, name, fault, options = {}) {
 }
 
 for (const name of ['rewrite_function', 'edit_code_patch']) {
-    test(`${name} edits the physical file and preserves its symlink`, async t => {
+    test(`${name} edits the physical file and preserves its symlink`, { skip: SKIP_WITHOUT_FILE_SYMLINKS }, async t => {
         const h = harness(t, name);
         const target = path.join(h.root, 'real.js');
         fs.renameSync(h.file, target); fs.symlinkSync(target, h.file, 'file');

@@ -1,7 +1,8 @@
 # CodeVis
 
-This file contains Claude-specific troubleshooting details that are easy to
-get wrong when working on CodeVis itself.
+Shared project rules live in `AGENTS.md`. This file contains only
+Claude-specific troubleshooting details that are easy to get wrong when
+working on CodeVis itself.
 
 ## Use the graph for structure
 
@@ -28,9 +29,9 @@ node -e "console.log(require('./server/codevis-paths.cjs').BRIDGE_PORT)"
 ```
 
 `CODEVIS_BRIDGE_PORT` and `LADYBUG_DAEMON_PORT` override the derived values.
-The legacy `bolt://`-shaped storage URI also encodes workspace selection; it is
-not a real network connection. Use the public workspace names at API and UI
-boundaries instead of interpreting that URI yourself.
+Select embedded databases with `ladybug.workspace('project_db')` or
+`ladybug.workspace('codevis_db')`. Workspace configuration does not need a
+server URI or credentials. Ports configure the local services, not database selection.
 
 ## Node identity
 

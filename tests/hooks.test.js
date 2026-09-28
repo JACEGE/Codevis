@@ -92,6 +92,22 @@ describe("lock-guard.js", () => {
         }
     });
 
+    it("registered checkout hooks enforce the shipped guards and respect disabled locking", async () => {
+        for (const [name, payload] of [
+            ['lock-guard', { tool_name: 'Edit', tool_input: { file_path: resolve(PROJECT_DIR, 'new/claimed-file.js'), old_string: 'x', new_string: 'y' } }],
+            ['bash-guard', { tool_name: 'Bash', tool_input: { command: "sed -i 's/foo/bar/' scripts/graph_builder.js" } }],
+        ]) {
+            const checkout = resolve(PROJECT_DIR, '.claude/hooks', name + '.js');
+            const template = resolve(PROJECT_DIR, 'templates/hooks', name + '.cjs');
+            const env = { CODEVIS_LOCK_SOURCE: 'manifest', CODEVIS_AGENT_ID: 'worker-9' };
+            const expected = await runHook(template, payload, env);
+            assert.equal(expected.permissionDecision, 'deny');
+            assert.deepEqual(await runHook(checkout, payload, env), expected);
+            const disabled = await runHook(checkout, payload, { ...env, CODEVIS_LOCKING: 'off' });
+            assert.equal(disabled.permissionDecision, 'allow');
+        }
+    });
+
     it("blocks a locked-function edit even when CODEVIS_AGENT_ID is not set", async () => {
         // v3 returned allow() outright when no agent id was set, so the guard
         // was disabled by the *absence* of a variable rather than by any
@@ -282,20 +298,7 @@ describe("lock-guard.js", () => {
         assert.equal(result.permissionDecision, "deny");
     });
 
-    // Regression guard for the live path. The hook used to hard-require
-    // `neo4j-driver`, a package CodeVis no longer ships: the require threw on
-    // every invocation, so the "live, deterministic" query never ran and every
-    // decision came from the manifest instead. Nothing failed loudly — the
-    // fallback answered, and the suite above stayed green. Assert the driver the
-    // hook reaches for actually loads, in both the checkout and the template.
-    // Was `codevis init` ausliefert, muss das sein, was hier läuft.
-    //
-    // Geprüft wurde das nur für lock-guard.js, und bash-guard.js war
-    // tatsaechlich auseinandergelaufen: der Vorlage fehlten zwei Kommentare.
-    // Diesmal war es harmlos, aber der Weg dorthin ist der gefaehrliche --
-    // eine Regel, die hier greift und beim Nutzer fehlt, fällt niemandem auf,
-    // der beide Seiten nicht nebeneinanderlegt. Byte-Gleichheit ist die
-    // einzige Zusicherung, die das ausschließt.
+    // Exercise shipped guards and ensure they use the embedded driver.
     it("runs the shipped guards inside an ESM project even with locking disabled", async () => {
         const fs = require("fs");
         const dir = fs.mkdtempSync(resolve(require('os').tmpdir(), 'codevis-esm-hooks-'));
@@ -314,12 +317,10 @@ describe("lock-guard.js", () => {
 
     it("can load the graph driver both hooks require", () => {
         const driver = require(resolve(PROJECT_DIR, "server/ladybug-driver.cjs"));
-        assert.equal(typeof driver.driver, "function");
-        assert.equal(typeof driver.auth.basic, "function");
+        assert.equal(typeof driver.workspace, "function");
 
         for (const hook of [LOCK_GUARD, BASH_GUARD]) {
-            // Comments are stripped first: both hooks document the old require
-            // in prose, and matching that text would fail for the wrong reason.
+            // Inspect executable imports, ignoring comments.
             const code = require("fs").readFileSync(hook, "utf-8")
                 .split("\n").filter(l => !l.trim().startsWith("//")).join("\n");
             const requires = code.match(/require\((['"])neo4j-driver\1\)/g) || [];

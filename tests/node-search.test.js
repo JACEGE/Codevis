@@ -71,3 +71,23 @@ test('Explore hides identifiers without losing the data needed for exact navigat
     assert.deepEqual(resultColumns({ uid: 'only-identity' }).columns, ['uid']);
     assert.deepEqual(resultColumns({ count: 8 }).columns, ['count']);
 });
+
+
+test('global search includes persisted CodeFlow evidence with exact identities', async t => {
+    const { session, cleanup } = await openTestDb();
+    t.after(cleanup);
+    const labels = ['Flow', 'Phase', 'Requirement', 'AcceptanceCriterion', 'TestCase', 'SourceAnalysis', 'ArchitectureDecision'];
+    const expected = new Set();
+    for (const label of labels) {
+        const result = await session.run('CREATE (n:' + label + ' {title: $title, name: $name}) RETURN elementId(n) AS id',
+            { title: 'Reservation evidence ' + label, name: 'internal-' + label });
+        expected.add(String(result.records[0].get('id')));
+    }
+    const found = await searchNodes(session, 'reservation evidence');
+    assert.deepEqual(new Set(found.items.map(item => item.id)), expected);
+    assert.deepEqual(new Set(found.items.flatMap(item => item.labels)), new Set(labels));
+    assert.equal(found.hasMore, false);
+    const exact = await searchNodes(session, 'Reservation evidence Requirement');
+    assert.equal(exact.items.length, 1);
+    assert.deepEqual(exact.items[0].labels, ['Requirement']);
+});

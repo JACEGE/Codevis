@@ -1,3 +1,5 @@
+import FlowNodeDetails from './FlowNodeDetails';
+import { workflowType } from '../graph/workflowShapes';
 import { useMemo, useState, useEffect, useCallback } from 'react';
 
 import BRIDGE_URL from '../bridgeUrl';
@@ -29,6 +31,14 @@ import ImpactSection from './ImpactSection';
 // the meaning — "calls" and "is called by" are the same edge — so a single label
 // per type would be wrong in one of the two lists.
 const REL_LABELS = {
+    HAS_PHASE: {out:'has phase',in:'phase of'},
+    HAS_REQUIREMENT: {out:'requires',in:'requirement of'},
+    HAS_CRITERION: {out:'acceptance criteria',in:'criterion of'},
+    VALIDATED_BY: {out:'validated by',in:'validates intent'},
+    VALIDATES: {out:'validates source',in:'validation intent'},
+    IMPLEMENTED_BY: {out:'implemented by test',in:'implements test intent'},
+    IMPLEMENTS: {out:'implements',in:'implemented by task'},
+    IMPACTS: {out:'predicted impact',in:'predicted by'},
     CALLS: { out: 'calls', in: 'called by' },
     CALLS_CONDITIONALLY: { out: 'conditionally calls', in: 'conditionally called by' },
     RENDERS: { out: 'renders', in: 'rendered by' },
@@ -174,7 +184,7 @@ function Section({ title, count, children, defaultOpen = true, accent }) {
 
 function InspectorSidebar({
     debugNode, callStack, graphData, onExpandAst, db = 'target',
-    onFindRoute, onKnowledgeSaved, onSelectNode, onSelectRelationship, onSearch,
+    onTraceCodeFlow, onFindRoute, onKnowledgeSaved, onSelectNode, onSelectRelationship, onSearch,
 }) {
     // The node as the *view* has it — used only until the detail request lands,
     // so the panel shows a name immediately instead of a spinner on every click.
@@ -285,6 +295,7 @@ function InspectorSidebar({
     const node = detail?.node || viewNode;
     // Nur gesetzt, wenn die Bridge diesen Knoten als Diagramm-Knoten erkennt.
     const spec = detail?.spec || null;
+    const isWorkflow=Boolean(workflowType(node?.labels));
     const isKnowledge = !!node?.labels?.includes('Knowledge');
     const isTask = !!node?.labels?.includes('Task');
     const isEpic = !!node?.labels?.includes('Epic');
@@ -385,6 +396,7 @@ function InspectorSidebar({
         <div className="hud-panel inspector-sidebar">
             {/* ── Kopf ─────────────────────────────────────────────────────── */}
             <div className="inspector-section">
+                {onTraceCodeFlow&&<button className="ui-button" onClick={()=>onTraceCodeFlow(debugNode)}>{node?.labels?.includes('Requirement')?'Trace implementation':'Trace → CodeFlow context'}</button>}
                 <div className="inspector-node-name">{node?.name || `#${debugNode}`}</div>
 
                 {node?.signature && (
@@ -462,7 +474,7 @@ function InspectorSidebar({
 
                 {/* Spec-Knoten haben keinen AST — sie stammen aus einem
                     Diagramm, nicht aus geparstem Code. */}
-                {onExpandAst && !isKnowledge && !isTask && !isEpic && !spec && (
+                {onExpandAst && !isWorkflow && !isKnowledge && !isTask && !isEpic && !spec && (
                     <button
                         className="inspector-ast-btn"
                         onClick={() => onExpandAst(debugNode)}
@@ -476,7 +488,7 @@ function InspectorSidebar({
                         ⚛ Show AST level
                     </button>
                 )}
-                {onFindRoute && !isKnowledge && !isTask && !isEpic && (
+                {onFindRoute && !isWorkflow && !isKnowledge && !isTask && !isEpic && (
                     <button
                         type="button"
                         onClick={onFindRoute}
@@ -603,8 +615,9 @@ function InspectorSidebar({
             )}
 
             {/* ── Task-Felder ──────────────────────────────────────────────── */}
-            {!isKnowledge && !isTask && !isEpic && !spec && <ImpactSection nodeId={debugNode} db={db} />}
+            {!isWorkflow && !isKnowledge && !isTask && !isEpic && !spec && <ImpactSection nodeId={debugNode} db={db} />}
 
+            {isWorkflow&&<FlowNodeDetails node={node} db={db}/>}
             {isTask && (node?.description || node?.status) && (
                 <Section title="Task" accent="#6366f1">
                     <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>

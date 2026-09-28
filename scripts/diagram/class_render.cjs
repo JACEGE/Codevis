@@ -89,14 +89,27 @@ function plantumlMember(text) {
     return String(text).replace(/(__|\*\*|\/\/|""|~~|--)/g, "~$1");
 }
 
-function renderPlantuml(model, { title = "Class Diagram" } = {}) {
+/** The one stereotype a box carries, or null. */
+function stereotypeOf(c) {
+    if (c.external) return "external";
+    if (c.kind === "enumeration") return "enumeration";
+    if (c.stereotype === "interface" || c.stereotype === "abstract") return c.stereotype;
+    return null;
+}
+
+function renderPlantuml(model, { title = "Class Diagram", compact = false } = {}) {
     const ids = buildIds(model.classes);
     const labels = displayLabels(model.classes);
     const L = [`@startuml`, `title ${label(title)}`, `skinparam classAttributeIconSize 0`, ``];
 
     for (const c of model.classes) {
         const id = ids.get(c.key);
-        const stereotype = c.external ? " <<external>>" : c.kind === "enumeration" ? " <<enumeration>>" : "";
+        const st = stereotypeOf(c);
+        const stereotype = st ? ` <<${st}>>` : "";
+        if (compact) {
+            L.push(`class "${labels.get(c.key)}" as ${id}${stereotype}`);
+            continue;
+        }
         const attrs = [
             ...(c.attributes || []).map((a) => `  ${plantumlMember(attributeLine(a))}`),
             ...(c.hiddenAttributes ? [`  .. ${c.hiddenAttributes} more ..`] : []),
@@ -242,7 +255,24 @@ function escapeMermaidUnderscores(text) {
     return text.replace(/__/g, "#95;#95;");
 }
 
-function renderMermaid(model, { title = "Class Diagram" } = {}) {
+/**
+ * Directory a class is grouped under — the display label of its namespace.
+ *
+ * The label is NOT used as the Mermaid namespace id: measured in a browser, a
+ * segment that happens to be a keyword (`note`, `style`, `class`) is a parse
+ * error, and a dotted id makes Mermaid nest one frame per path segment. The
+ * id is therefore an index (`NS0`), the path goes in the quoted label.
+ */
+function namespaceName(file) {
+    const dir = String(file || "").replace(/\\/g, "/").split("/").slice(0, -1).filter(Boolean);
+    return dir.length ? dir.join("/") : "(root)";
+}
+
+function renderMermaid(model, opts = {}) {
+    const { title = "Class Diagram", compact = false } = opts;
+    const groupByDirectory = typeof opts.groupByDirectory === "boolean"
+        ? opts.groupByDirectory
+        : Boolean(model.options && model.options.groupByDirectory);
     const ids = buildIds(model.classes);
     const labels = displayLabels(model.classes);
     const L = [`---`, `title: ${label(title)}`, `---`, `classDiagram`];
@@ -258,11 +288,38 @@ function renderMermaid(model, { title = "Class Diagram" } = {}) {
         return L.join("\n");
     }
 
+    const omitted = model.stats && model.stats.usesOmitted;
+    if (omitted) L.push(`  %% ${omitted} weaker uses arrows omitted (cap)`);
+
+    // Namespace blocks may only hold class declarations; members, stereotypes
+    // and relations stay at top level and refer to the ids declared inside.
+    const declare = (c, indent) => L.push(`${indent}class ${ids.get(c.key)}["${labels.get(c.key)}"]`);
+    const groups = new Map();
+    if (groupByDirectory) {
+        for (const c of model.classes) {
+            if (c.external || !c.file) continue;
+            const ns = namespaceName(c.file);
+            if (!groups.has(ns)) groups.set(ns, []);
+            groups.get(ns).push(c);
+        }
+    }
+    // One directory is no grouping at all — the frame would only add noise.
+    const grouped = groups.size > 1;
+    if (grouped) {
+        const sorted = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+        for (const [i, [ns, members]] of sorted.entries()) {
+            L.push(`  namespace NS${i}["${label(ns)}"] {`);
+            for (const c of members) declare(c, "    ");
+            L.push(`  }`);
+        }
+    }
+
     for (const c of model.classes) {
         const id = ids.get(c.key);
-        L.push(`  class ${id}["${labels.get(c.key)}"]`);
-        if (c.external) L.push(`  <<external>> ${id}`);
-        else if (c.kind === "enumeration") L.push(`  <<enumeration>> ${id}`);
+        if (!grouped || c.external || !c.file) declare(c, "  ");
+        const st = stereotypeOf(c);
+        if (st) L.push(`  <<${st}>> ${id}`);
+        if (compact) continue;
         // Attributes first: Mermaid sorts members into compartments itself,
         // putting parenthesised entries in the method half.
         for (const a of c.attributes || []) L.push(`  ${id} : ${mermaidMember(attributeLine(a))}`);
@@ -279,7 +336,9 @@ function renderMermaid(model, { title = "Class Diagram" } = {}) {
         if (r.kind === "inherits") L.push(`  ${to} <|-- ${from}`);
         else if (r.kind === "association") L.push(`  ${from} --> ${to}`);
         else if (r.kind === "creates") L.push(`  ${from} ..> ${to} : creates`);
-        else L.push(`  ${from} ..> ${to} : uses`);
+        // The dotted arrow already means "depends on"; a label on every one of
+        // them was the single largest source of clutter in big diagrams.
+        else L.push(`  ${from} ..> ${to}`);
     }
 
     return L.join("\n");
@@ -298,5 +357,5 @@ function renderClassDiagram(model, opts = {}) {
 
 module.exports = {
     renderClassDiagram, renderPlantuml, renderMermaid,
-    methodLine, attributeLine, mermaidMember, plantumlMember, label, classLabel,
+    methodLine, attributeLine, mermaidMember, plantumlMember, label, classLabel, namespaceName,
 };

@@ -3,7 +3,7 @@
  *
  * Both the MCP handler (tools/handlers/spec-tools.ts) and the bridge
  * (server/bridge.js) use these functions, so the Cypher lives in exactly one
- * place. Pure-DB layer: takes an open neo4j/ladybug-compatible `session`,
+ * place. Pure-DB layer: takes an open Ladybug `session`,
  * returns plain JS objects (no MCP envelope, no HTTP).
  *
  * Ladybug single-table mapping (see schema notes): distinct Spec* labels, spec

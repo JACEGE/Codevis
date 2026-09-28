@@ -33,15 +33,12 @@ async function main() {
     console.error('Kein Komponentenname angegeben.');
     console.error('   Nutzung: node scripts/reset_component.js <workspace> <ComponentName> [--list]');
     console.error('\n   Verfuegbare Komponenten mit RuntimeDOM-Knoten:');
-    await listAllComponents(config.workspaces[targetName]);
+    await listAllComponents(targetName);
     process.exitCode = 1;
     return;
   }
 
-  const ws = config.workspaces[targetName];
-  const { auth } = ws;
-  const dbUri = ws.dbUri || ws.neo4jUri;
-  const driver = ladybug.driver(dbUri, ladybug.auth.basic(auth.user, auth.pass));
+  const driver = ladybug.workspace(targetName);
   const session = driver.session();
 
   try {
@@ -112,10 +109,8 @@ async function main() {
   }
 }
 
-async function listAllComponents(ws) {
-  const { auth } = ws;
-  const dbUri = ws.dbUri || ws.neo4jUri;
-  const driver = ladybug.driver(dbUri, ladybug.auth.basic(auth.user, auth.pass));
+async function listAllComponents(workspace) {
+  const driver = ladybug.workspace(workspace);
   const session = driver.session();
   try {
     const result = await session.run(`

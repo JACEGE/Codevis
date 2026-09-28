@@ -10,6 +10,7 @@ require('../lib/tsx-userinfo-preload.cjs');
 require('tsx/cjs/api').register();
 const parser = require('../tools/lib/treesitter.ts');
 const { planSemanticRename } = require('../tools/lib/semantic-rename.ts');
+const { SKIP_WITHOUT_FILE_SYMLINKS } = require('./helpers/symlinks.cjs');
 const source = ts.createSourceFile('edit-tools.ts', fs.readFileSync(path.resolve(__dirname, '../tools/handlers/edit-tools.ts'), 'utf8'), ts.ScriptTarget.Latest, true);
 const transaction = ts.createSourceFile('edit-transaction.ts', fs.readFileSync(path.resolve(__dirname, '../tools/lib/edit-transaction.ts'), 'utf8'), ts.ScriptTarget.Latest, true);
 const helpers = source.statements.filter(n => ts.isFunctionDeclaration(n) && ['collectRenameOffsets', 'applyRenameOffsets'].includes(n.name.text)).map(n => n.getText(source));
@@ -73,7 +74,7 @@ function harness(t, fault) {
         } };
 }
 
-test('rename preserves source and caller symlinks and the resulting modules execute', async t => {
+test('rename preserves source and caller symlinks and the resulting modules execute', { skip: SKIP_WITHOUT_FILE_SYMLINKS }, async t => {
     const h = harness(t);
     for (const file of [h.src, h.caller]) {
         const target = path.join(h.root, 'physical-' + path.basename(file));

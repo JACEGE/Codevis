@@ -8,7 +8,7 @@ const { createRequire } = require('node:module');
 async function runReset(script, args, { failQuery = false, count = 0 } = {}) {
   const filename = path.resolve(__dirname, '../scripts', script);
   const realRequire = createRequire(filename);
-  const state = { queries: [], launches: [], closed: 0, configReads: 0 };
+  const state = { workspaces: [], queries: [], launches: [], closed: 0, configReads: 0 };
   const session = {
     async run(query) {
       state.queries.push(query);
@@ -27,10 +27,10 @@ async function runReset(script, args, { failQuery = false, count = 0 } = {}) {
         PROJECT_ROOT: '/sample project',
         loadConfig() {
           state.configReads++;
-          return { workspaces: { target: { dbUri: 'bolt://localhost:7687', auth: {} } } };
+          return { workspaces: { target: {}, meta: {} } };
         },
       };
-      if (name === '../server/ladybug-driver.cjs') return { driver: () => driver, auth: { basic() {} } };
+      if (name === '../server/ladybug-driver.cjs') return { workspace: name => { state.workspaces.push(name); return driver; } };
       if (name === 'child_process') return { execFileSync: (...values) => state.launches.push(values) };
       return realRequire(name);
     },
@@ -48,10 +48,17 @@ for (const [script, args] of [
   test(`${script} resolves project config and accepts public workspace names`, async () => {
     const result = await runReset(script, args);
     assert.equal(result.configReads, 1);
+    assert.deepEqual(result.workspaces, ['target']);
     assert.ok(result.queries.length > 0);
     assert.equal(result.exitCode, 0);
     assert.equal(result.closed, 1);
     assert.equal(result.queries.some(query => /DELETE|REMOVE/.test(query)), false);
+  });
+  test(`${script} selects the self-graph explicitly without connection settings`, async () => {
+    const result = await runReset(script, ['codevis_db', ...args.slice(1)]);
+    assert.equal(result.exitCode, 0);
+    assert.deepEqual(result.workspaces, ['meta']);
+    assert.ok(result.queries.length > 0);
   });
   test(`${script} fails visibly on database errors`, async () => {
     const result = await runReset(script, args, { failQuery: true });

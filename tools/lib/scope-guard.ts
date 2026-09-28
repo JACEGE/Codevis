@@ -31,6 +31,8 @@ export async function assertFileScope(file: string): Promise<void> {
         if (!claim || claim.get('agentId') !== guard.agentId || (guard.taskId && claim.get('taskId') !== guard.taskId)) {
             const error: any = new Error(claim
                 ? `Scope conflict: '${canonical}' belongs to task '${claim.get('taskId')}' (agent '${claim.get('agentId')}'). Coordinate an explicit handoff; do not retry while holding competing claims.`
+                : guard.taskId
+                ? `Scope required: '${canonical}' is not (or no longer) locked for task '${guard.taskId}'. If your lease expired, call claim_task for your own task again (it renews the lease) or extend_locks; to add a new file use expand_task_scope.`
                 : `Scope required: claim '${canonical}' with plan_task_scope / claim_task or expand_task_scope before editing.`);
             error.code = claim ? 'LOCK_CONFLICT' : 'SCOPE_REQUIRED';
             throw error;

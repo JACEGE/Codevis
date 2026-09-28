@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import puppeteer from 'puppeteer';
+import { selectDashboardView } from './dashboard-navigation.mjs';
 
 const browser = await puppeteer.launch({ headless: true, args: ['--enable-unsafe-swiftshader'] });
 try {
@@ -10,7 +11,7 @@ try {
     await page.goto(process.argv[2] || 'http://localhost:4362', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.navigation-history', { visible: true });
     const status = await page.evaluate(() => fetch('/api/status').then(response => response.json()));
-    await page.waitForFunction(db => document.querySelector('.workspace-db')?.textContent === db, { timeout: 60000 }, status.activeDb);
+    await page.waitForFunction(db => [...document.querySelectorAll('.workspace-db')].some(node => node.getClientRects().length && !node.disabled && node.title.includes(db)), { timeout: 60000 }, status.activeDb);
     const state = () => page.evaluate(() => {
         const header = [...document.querySelectorAll('.workspace-header')].find(node => node.getClientRects().length);
         return {
@@ -28,15 +29,15 @@ try {
         }, label);
     };
     const tab = async label => {
-        await click(label);
+        await selectDashboardView(page, label);
         await page.waitForFunction(label => [...document.querySelectorAll('.workspace-header')]
             .some(header => header.getClientRects().length && header.querySelector('[aria-current="page"]')?.textContent.trim() === label), {}, label);
     };
     assert.equal((await state()).back, false);
-    await tab('Context');
+    await tab('Knowledge');
     await tab('Docs');
     await click('Go back');
-    await page.waitForFunction(() => [...document.querySelectorAll('[aria-current="page"]')].some(node => node.getClientRects().length && node.textContent.trim() === 'Context'));
+    await page.waitForFunction(() => [...document.querySelectorAll('[aria-current="page"]')].some(node => node.getClientRects().length && node.textContent.trim() === 'Knowledge'));
     assert.equal((await state()).forward, true);
     await click('Go forward');
     await page.waitForFunction(() => [...document.querySelectorAll('[aria-current="page"]')].some(node => node.getClientRects().length && node.textContent.trim() === 'Docs'));
@@ -44,8 +45,8 @@ try {
     await tab('Inspector');
     assert.equal((await state()).forward, false);
     await click('Go back');
-    await page.waitForFunction(() => [...document.querySelectorAll('[aria-current="page"]')].some(node => node.getClientRects().length && node.textContent.trim() === 'Context'));
-    await tab('Context');
+    await page.waitForFunction(() => [...document.querySelectorAll('[aria-current="page"]')].some(node => node.getClientRects().length && node.textContent.trim() === 'Knowledge'));
+    await tab('Knowledge');
     assert.equal((await state()).forward, true);
     await page.waitForFunction(() => !document.body.innerText.includes('Loading context'));
     const contextItems = await page.$$('[title="Open in Inspector"]');
@@ -62,7 +63,7 @@ try {
             return name;
         };
         const first = await inspect(0);
-        await tab('Context');
+        await tab('Knowledge');
         const second = await inspect(1);
         await click('Go back');
         await click('Go back');

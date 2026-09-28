@@ -1,7 +1,9 @@
 # Dashboard navigation
 
 Use **Search code & work** in the header to find files, functions, classes,
-modules, endpoints, Tasks, Epics and Knowledge by name or file path. Search
+modules, endpoints, Tasks, Epics, Knowledge and CodeFlow evidence (Flows, phases,
+requirements, acceptance criteria, TestCases, analyses and decisions) by name or
+file path. Search
 reads the selected database, including nodes outside the visible graph budget.
 Exact names appear first. Up to 50 results are shown; refine the search when
 there are more. Select a result to open Inspector and its direct connections.

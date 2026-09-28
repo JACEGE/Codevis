@@ -163,10 +163,7 @@ process.stdin.on('end', async () => {
 // Returns [] for "no locks here" and null for "could not determine", which the
 // caller must not conflate.
 
-// Resolve the embedded-DB compat client. This used to be a hard
-// `require('neo4j-driver')`, which threw on every invocation once the Neo4j
-// opt-in was dropped — the "live, deterministic" path below never ran and the
-// guard silently degraded to the manifest on every single edit.
+// Resolve the embedded database client from a checkout or local installation.
 function loadGraphDriver(projectDir) {
     const candidates = [
         resolve(projectDir, 'server/ladybug-driver.cjs'),
@@ -199,10 +196,10 @@ async function getLocksForFile(relPath, projectDir) {
         const configPath = resolve(projectDir, 'codevis.config.cjs');
         if (process.env.CODEVIS_LOCK_SOURCE !== 'manifest' && existsSync(configPath)) {
             const config = require(configPath);
-            const ws = config.workspaces?.meta;
+            const ws = config.workspaces?.codevis_db || config.workspaces?.codevis || config.workspaces?.meta;
             const ladybug = ws ? loadGraphDriver(projectDir) : null;
             if (ladybug) {
-                const driver = ladybug.driver((ws.dbUri || ws.neo4jUri), ladybug.auth.basic(ws.auth.user, ws.auth.pass));
+                const driver = ladybug.workspace('codevis_db');
                 const session = driver.session();
                 try {
                     // Expired locks must not block: lock_subgraph sets a TTL and

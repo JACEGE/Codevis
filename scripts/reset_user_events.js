@@ -37,10 +37,7 @@ async function main() {
 
   if (!config.workspaces[targetName]) throw new Error(`Workspace '${publicWorkspaceName(targetName)}' is not configured.`);
 
-  const ws = config.workspaces[targetName];
-  const { auth } = ws;
-  const dbUri = ws.dbUri || ws.neo4jUri;
-  const driver = ladybug.driver(dbUri, ladybug.auth.basic(auth.user, auth.pass));
+  const driver = ladybug.workspace(targetName);
 
   try {
     await driver.verifyConnectivity();

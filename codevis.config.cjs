@@ -5,11 +5,7 @@
 //
 //   CODEVIS_PROJECT_DB_SRC comma-separated source dirs for `project_db`
 //                        (e.g. "C:/work/my-robot/src,C:/work/my-robot/msgs").
-//   CODEVIS_*_URI/_PASS  the database is embedded, so these are not connection
-//                        strings to a server: the URI's port is only how the two
-//                        graphs are told apart (7687 project, 7688 CodeVis), and the
-//                        credentials are unused. The older NEO4J_*_URI/_PASS
-//                        names are still read so existing setups keep working.
+// Database selection uses workspace names; no server URL or login is needed.
 //
 // `codevis init` writes a project-specific config with real source dirs; this
 // one exists so CodeVis can build a graph of its own code out of the box.
@@ -25,6 +21,15 @@ module.exports = {
   // CodeVis itself already has source. Greenfield projects created with
   // `codevis init new` use "planning" until `codevis init code` switches them.
   workMode: "code",
+  // Durable Change artifacts live in Git; command arrays run without a shell.
+  workflow: {
+    artifactDir: 'docs/codevis',
+    checks: [
+      { name: 'tests', command: 'node', args: ['scripts/run-tests.mjs'] },
+      { name: 'typecheck', command: 'node', args: ['node_modules/typescript/bin/tsc', '--noEmit', '--noUnusedLocals', '--noUnusedParameters'] },
+    ],
+    policies: { unexpectedImpact: 'warning', unvalidatedSource: 'warning' },
+  },
   // Experimental multi-agent node locking. Off by default: tasks still keep
   // AFFECTS links and edit tools still validate/sync code, but no lock is
   // planned or required. Set true (or CODEVIS_LOCKING=on) to enable it.
@@ -65,8 +70,6 @@ module.exports = {
       ],
       // Optional project-root-relative globs; matching directories are pruned.
       exclude: [],
-      dbUri: process.env.CODEVIS_CODEVIS_DB_URI || process.env.CODEVIS_META_URI || process.env.NEO4J_META_URI || "bolt://localhost:7688",
-      auth: { user: "codevis", pass: process.env.CODEVIS_CODEVIS_DB_PASS || process.env.CODEVIS_META_PASS || process.env.NEO4J_META_PASS || "unused-with-embedded-db" },
     },
     // The project being analysed. Empty until CODEVIS_PROJECT_DB_SRC says otherwise
     // — a build then reports the empty workspace instead of silently graphing
@@ -74,8 +77,6 @@ module.exports = {
     project_db: {
       sourceDir: targetSourceDirs(),
       exclude: [],
-      dbUri: process.env.CODEVIS_PROJECT_DB_URI || process.env.CODEVIS_TARGET_URI || process.env.NEO4J_TARGET_URI || "bolt://localhost:7687",
-      auth: { user: "codevis", pass: process.env.CODEVIS_PROJECT_DB_PASS || process.env.CODEVIS_TARGET_PASS || process.env.NEO4J_TARGET_PASS || "unused-with-embedded-db" },
     },
   },
 };

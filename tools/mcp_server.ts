@@ -31,6 +31,7 @@ import { rosTools } from "./handlers/ros-tools.js";
 import { ideaTools } from "./handlers/idea-tools.js";
 import { impactTools } from "./handlers/impact-tools.js";
 import { analysisTools } from "./handlers/analysis-tools.js";
+import { changeTools } from './handlers/change-tools.js';
 import { annotationTools } from "./handlers/annotation-tools.js";
 
 // ── Setup ──────────────────────────────────────────────────────
@@ -60,9 +61,9 @@ if (!targetWorkspace) {
     throw new Error("No project workspace configured. Use workspaces.project_db (legacy: project/target).");
 }
 
-const targetDriver = ladybug.driver((targetWorkspace.dbUri || targetWorkspace.neo4jUri), ladybug.auth.basic(targetWorkspace.auth.user, targetWorkspace.auth.pass));
+const targetDriver = ladybug.workspace('project_db');
 const metaDriver = metaWorkspace
-    ? ladybug.driver((metaWorkspace.dbUri || metaWorkspace.neo4jUri), ladybug.auth.basic(metaWorkspace.auth.user, metaWorkspace.auth.pass))
+    ? ladybug.workspace('codevis_db')
     : targetDriver;
 
 const ctx: ServerContext = {
@@ -92,7 +93,7 @@ const workspaceTools: ToolModule = {
     },
 };
 
-const fullModules = [workspaceTools, queryTools, impactTools, analysisTools, annotationTools, bridgeTools, lockTools, taskTools, editTools, knowledgeTools, specTools, diagramTools, ideaTools, rosTools];
+const fullModules = [workspaceTools, changeTools, queryTools, impactTools, analysisTools, annotationTools, bridgeTools, lockTools, taskTools, editTools, knowledgeTools, specTools, diagramTools, ideaTools, rosTools];
 const fullDefs = fullModules.flatMap(m => m.definitions);
 const fullHandlers: Record<string, ToolHandler> = Object.assign({}, ...fullModules.map(m => m.handlers));
 
@@ -113,6 +114,8 @@ const workerToolNames = new Set([
     "get_workspace_identity", "project_db", "codevis_db", "tool_db", "meta_db", "predefined_queries", "find_path", "read_function", "impact", "analysis_quality",
     // Reviewable semantic metadata; workers cannot accept/reject proposals.
     "propose_annotation", "list_annotations",
+    "change_read",
+    "flow_read",
     // Knowledge (read)
     "get_knowledge_for_node", "list_knowledge",
     // Editing

@@ -214,3 +214,56 @@ test('review completion releases scope and restarting work reacquires it', async
     await op('complete','b');
     assert.equal((await op('transition','a',undefined,{newStatus:'in_progress'})).status,'OK');
 });
+
+test('re-claiming your own in-progress task renews an expired lease instead of refusing', async t => {
+    const { s, op } = await fixture(t);
+    await op('plan','a',['new/a.js']);
+    assert.equal((await op('claim','a')).status,'OK');
+    await s.run("MATCH (n) WHERE n.lockGroup='a' SET n.lockExpires=1");
+    const renewed = await op('claim','a');
+    assert.equal(renewed.status,'OK');
+    assert.equal(renewed.renewed,true);
+    const lease = await s.run("MATCH (n:TaskScope {file:'new/a.js'}) RETURN n.lockExpires AS expires,n.lockedBy AS owner");
+    assert.ok(Number(lease.records[0].get('expires')) > Date.now());
+    assert.equal(lease.records[0].get('owner'),'worker-a');
+    assert.equal((await op('claim','a',undefined,{agentId:'worker-b'})).status,'ALREADY_CLAIMED');
+});
+
+test('re-claiming after another task took the expired scope reports the conflict', async t => {
+    const { s, op } = await fixture(t);
+    await op('plan','a',['new/shared.js']);
+    await op('plan','b',['new/shared.js']);
+    await op('claim','a');
+    await s.run("MATCH (n) WHERE n.lockGroup='a' SET n.lockExpires=1");
+    assert.equal((await op('claim','b')).status,'OK');
+    assert.equal((await op('claim','a')).status,'LOCK_CONFLICT');
+});
+
+test('completion is allowed for the creator and lead agents but not for other agents', async t => {
+    const { s, op } = await fixture(t);
+    await s.run("MATCH (t:Task {taskId:'a'}) SET t.createdBy='creator'");
+    await op('plan','a',['new/a.js']);
+    await op('claim','a');
+    assert.equal((await op('complete','a',undefined,{agentId:'worker-b'})).status,'NOT_OWNER');
+    const done = await op('complete','a',undefined,{agentId:'creator'});
+    assert.equal(done.newStatus,'review');
+    assert.equal(done.releasedCount,1);
+    await op('plan','b',['new/b.js']);
+    await op('claim','b');
+    assert.equal((await op('complete','b',undefined,{agentId:'lead-agent'})).newStatus,'review');
+});
+
+test('the scope guard points an owner with an expired lease to renewal', async t => {
+    require('../lib/tsx-userinfo-preload.cjs');
+    const unregister = require('tsx/cjs/api').register(); t.after(unregister);
+    const { withScopeGuard, assertFileScope } = require('../tools/lib/scope-guard.ts');
+    const { s, op } = await fixture(t);
+    await op('plan','a',['new/a.js']);
+    await op('claim','a');
+    await s.run("MATCH (n) WHERE n.lockGroup='a' SET n.lockExpires=1");
+    await withScopeGuard({driver:{session:()=>s},root,agentId:'worker-a',taskId:'a'}, async () => {
+        await assert.rejects(assertFileScope('new/a.js'), /claim_task for your own task again .*extend_locks/);
+    });
+    await op('claim','a');
+    await withScopeGuard({driver:{session:()=>s},root,agentId:'worker-a',taskId:'a'}, () => assertFileScope('new/a.js'));
+});

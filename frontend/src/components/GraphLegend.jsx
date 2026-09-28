@@ -1,3 +1,5 @@
+import WorkflowGlyph from '../graph/WorkflowGlyph';
+import { workflowType, WORKFLOW_STYLES } from '../graph/workflowShapes';
 import { useMemo } from 'react';
 import { NODE_COLORS, colorForNode, displayNameForLabel } from '../nodePalette';
 
@@ -17,7 +19,7 @@ export default function GraphLegend({ nodes = [], palette = {} }) {
             const label = labels.find(l => palette[l]) || labels.find(l => NODE_COLORS[l]) || node.category || labels[0] || 'Other';
             const color = colorForNode(node, palette);
             const key = `${label}:${color}`;
-            const entry = entries.get(key) || { label: displayNameForLabel(label), color, count: 0 };
+            const entry = entries.get(key) || { label: displayNameForLabel(label)+(workflowType(labels)&&node.status?' · '+node.status:''), type: workflowType(labels), color, count: 0 };
             entry.count++;
             entries.set(key, entry);
         }
@@ -41,10 +43,10 @@ export default function GraphLegend({ nodes = [], palette = {} }) {
     );
 }
 
-function LegendRow({ label, color, count }) {
+function LegendRow({ label, color, count, type }) {
     return <div className="graph-legend-row">
-        <span aria-hidden="true" style={{ background: color }} />
-        <span>{label}</span>
+        {type ? <WorkflowGlyph label={type} color={color}/> : <span aria-hidden="true" style={{ background: color }} />}
+        <span title={WORKFLOW_STYLES[type]?.shape}>{label}</span>
         {count != null && <small>{count}</small>}
     </div>;
 }
