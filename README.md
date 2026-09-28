@@ -250,6 +250,11 @@ npx codevis build    # build the code graph
 # restart Claude Code, then /mcp should list 'codevis_graph'
 ```
 
+The wizard asks which AI clients to set up and writes each one's own config
+format: `claude` (`.mcp.json`, hooks, agents), `codex` (`.codex/config.toml`)
+and `antigravity`. Unattended: `npx codevis init --clients claude,codex`. A
+re-init keeps the clients the project is already set up for.
+
 For a project that is still being designed, start without a code graph:
 
 ```bash
@@ -415,6 +420,30 @@ npm run bridge
 
 For frontend development with hot reload, run `cd frontend && npm run dev` in
 a second terminal and use http://localhost:5173 instead.
+
+### Use a local checkout in other projects
+
+The npm release can lag behind `main`. To run the checkout in your own
+projects instead, link it globally once:
+
+```bash
+git clone https://github.com/JACEGE/Codevis.git
+cd Codevis
+npm install
+cd frontend && npm install && npm run build && cd ..
+npm link                # 'codevis' on PATH now runs this checkout
+```
+
+Then run `codevis init` (not `npx codevis init`, which may fetch the npm
+release) in the project. Started from a checkout, init installs the checkout
+as `"codevis": "file:<checkout>"`, so `node_modules/codevis` is a link and
+every `git pull` reaches the project. A registry copy left over from an
+earlier init is replaced when you rerun init.
+
+After pulling changes, restart the project's MCP clients and its dashboard.
+A database daemon that is still running from older code is restarted
+automatically (cleanly, data kept) as soon as newer code needs a table or
+column it does not have yet.
 
 | Surface | URL |
 |---|---|

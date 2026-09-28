@@ -41,9 +41,11 @@ async function syncGraphFile(session, snapshot) {
         if (created.length) {
             await tx.run(`UNWIND $functions AS fn
                 MERGE (f:File {path:$file})
+                SET f.createdAt=coalesce(f.createdAt, timestamp())
                 MERGE (n:Function {uid:fn.uid})
                 SET n.name=fn.name,n.file=$file,n.startLine=fn.startLine,n.endLine=fn.endLine,
-                    n.bodySnippet=fn.snippet,n.nodeId=fn.uid,n.ipv6=fn.ipv6
+                    n.bodySnippet=fn.snippet,n.nodeId=fn.uid,n.ipv6=fn.ipv6,
+                    n.createdAt=coalesce(n.createdAt, timestamp())
                 MERGE (f)-[:CONTAINS]->(n)`, { functions:created, file });
             if (mode === 'commit') await tx.run(`UNWIND $names AS name
                 MATCH (n:Function {name:name,file:$file}), (t:Task {taskId:$taskId})

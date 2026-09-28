@@ -392,18 +392,62 @@ function daemonConnectionError(error) {
     return wrapped;
 }
 
+/** Hash of the schema this code expects; the daemon reports its own in /health. */
+function wantedSchemaFingerprint() {
+    const schema = require('../scripts/ladybug_schema.cjs');
+    return crypto.createHash('sha256').update(schema.DDL.join('\n')).digest('hex').slice(0, 16);
+}
+
+/**
+ * Does the attached daemon lack a table or column this code queries?
+ *
+ * A daemon outlives the code that started it: a project whose MCP server still
+ * ran an older CodeVis kept an older daemon, and a newer dashboard then got
+ * "Table HAS_PHASE does not exist" and drew an empty graph. The daemon only
+ * adds its OWN schema when it opens a database, so it has to be restarted from
+ * this code. A different fingerprint alone is no reason: a newer daemon serves
+ * an older client fine, and restarting it would only start the two versions
+ * taking turns. Only a missing table or column is. Unreadable catalog → false.
+ */
+async function daemonLacksSchema() {
+    try {
+        const health = JSON.parse((await httpGet('/health', 1000)).body);
+        if (health.schemaFingerprint === wantedSchemaFingerprint()) return false;
+        const schema = require('../scripts/ladybug_schema.cjs');
+        const names = async (cypher) => {
+            const { status, json } = await httpPostJson('/cypher', { db: 'target', cypher, params: {} }, 30000);
+            if (status !== 200 || !Array.isArray(json?.records)) throw new Error(json?.error || `status ${status}`);
+            return new Set(json.records.map((r) => r.name));
+        };
+        const tables = await names('CALL show_tables() RETURN name');
+        if (Object.keys(schema.REL_SPECS).some((type) => !tables.has(type))) return true;
+        const columns = await names(`CALL table_info('CodeNode') RETURN name`);
+        if (schema.parseColumns(schema.NODE_TABLES[0]).some((c) => !columns.has(c.name))) return true;
+        // Every rel table is built from the same property union, so one stands for all.
+        const relColumns = await names(`CALL table_info('TOUCHED') RETURN name`);
+        return schema.parseColumns(`X(${schema.REL_PROP_UNION.join(', ')})`).some((c) => !relColumns.has(c.name));
+    } catch (_) {
+        return false;
+    }
+}
+
 function ensureDaemon() {
     if (ensurePromise) return ensurePromise;
     ensurePromise = (async () => {
         // 1. Someone already owns our data dir → attach. A second writer on the
         //    same Kuzu database is the one thing this daemon exists to prevent.
-        if (await discoverRunningPort()) return;
-
         // 2. No pidfile, but a daemon serving our data dir may still be up on the
         //    port we would derive (pidfile lost, same project). Accept it only if
         //    it confirms our data dir — a 'foreign' answer means someone else's
         //    project hashed onto this port, and we must NOT talk to it.
-        if (await probe(paths.DAEMON_PORT) === 'mine') return;
+        if (await discoverRunningPort() || await probe(paths.DAEMON_PORT) === 'mine') {
+            if (!await daemonLacksSchema()) return;
+            // Older daemon: stop it cleanly (checkpoints the WAL) and spawn one
+            // from this code, whose open path adds the missing schema.
+            process.stderr.write('[ladybug] running daemon predates this CodeVis schema; restarting it\n');
+            const { stopped, reason } = await stopDaemon();
+            if (!stopped) throw new Error(`Could not restart the outdated ladybug daemon: ${reason}. Run "codevis stop" in the project, then retry.`);
+        }
 
         // 3. Spawn. Env is passed through so test overrides (LADYBUG_*_PATH,
         //    LADYBUG_PIDFILE) reach the daemon. CODEVIS_PROJECT_DIR is pinned to
@@ -760,8 +804,7 @@ const auth = {
 async function reconcileDaemonSchema(dbKey) {
     try {
         await ensureDaemon();
-        const schema = require('../scripts/ladybug_schema.cjs');
-        const wantedFingerprint = crypto.createHash('sha256').update(schema.DDL.join('\n')).digest('hex').slice(0, 16);
+        const wantedFingerprint = wantedSchemaFingerprint();
         const health = await httpGet('/health', 1000);
         let runningFingerprint = null;
         // Unlesbare Antwort heißt: Fingerabdruck bleibt null, stimmt also

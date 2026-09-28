@@ -54,16 +54,28 @@ const countOf = (result) => result.records[0]?.get("count")?.toNumber?.()
  * Function/Class/Component whose current span overlaps a changed line.
  * Line numbers must come from the graph's current parse of the file.
  */
-async function recordTouchedRanges(session, { taskId, kind, file, ranges }) {
+/**
+ * `at`/`agentId` are the journal entry's: when and by whom the edit was made,
+ * not when it was replayed. `since` is the task's first journaled edit; a node
+ * the graph first saw after it was written for this task ('created'),
+ * otherwise it existed and was changed ('modified'). The first replay decides
+ * and later ones keep it: a full rebuild resets createdAt and would otherwise
+ * turn every node into 'created'.
+ */
+async function recordTouchedRanges(session, { taskId, kind, file, ranges, at = Date.now(), agentId = null, since = null }) {
   if (!taskId || !file || !ranges?.length) return 0;
-  const at = Date.now();
   let touched = 0;
+  const stamp = `SET r.kind = $kind, r.agentId = coalesce($agentId, r.agentId),
+      r.firstAt = CASE WHEN r.firstAt IS NULL OR r.firstAt > $at THEN $at ELSE r.firstAt END,
+      r.at = CASE WHEN r.at IS NULL OR r.at < $at THEN $at ELSE r.at END,
+      r.change = coalesce(r.change, CASE WHEN $since IS NOT NULL AND n.createdAt >= $since THEN 'created' ELSE 'modified' END)`;
+  const params = { taskId, file, at, kind, agentId, since };
   const fileResult = await session.run(
     `MATCH (t:Task {taskId: $taskId}), (n:File {path: $file})
     MERGE (t)-[r:TOUCHED]->(n)
-    SET r.at = $at, r.kind = $kind
+    ${stamp}
     RETURN count(n) AS count`,
-    { taskId, file, at, kind },
+    params,
   );
   touched += countOf(fileResult);
   for (const { start, end } of ranges) {
@@ -72,9 +84,9 @@ async function recordTouchedRanges(session, { taskId, kind, file, ranges }) {
       WHERE (n:Function OR n:Class OR n:Component)
        AND n.startLine IS NOT NULL AND n.startLine <= $lastLine AND n.endLine >= $firstLine
       MERGE (t)-[r:TOUCHED]->(n)
-      SET r.at = $at, r.kind = $kind
+      ${stamp}
       RETURN count(n) AS count`,
-      { taskId, file, firstLine: start, lastLine: end, at, kind },
+      { ...params, firstLine: start, lastLine: end },
     );
     touched += countOf(result);
   }
@@ -85,7 +97,8 @@ async function getTouchedNodes(session, taskId) {
   const result = await session.run(
     `MATCH (t:Task {taskId: $taskId})-[r:TOUCHED]->(n)
      RETURN n.name AS name, n.path AS path, n.file AS file, n.ipv6 AS ipv6,
-            labels(n) AS labels, r.at AS at, r.kind AS kind`,
+            labels(n) AS labels, r.at AS at, r.kind AS kind,
+            r.firstAt AS firstAt, r.agentId AS agentId, r.change AS change`,
     { taskId },
   );
   return result.records.map((record) => ({
@@ -96,6 +109,9 @@ async function getTouchedNodes(session, taskId) {
     labels: record.get("labels"),
     at: record.get("at"),
     kind: record.get("kind"),
+    firstAt: record.get("firstAt"),
+    agentId: record.get("agentId"),
+    change: record.get("change"),
   }));
 }
 

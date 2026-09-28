@@ -117,7 +117,7 @@ const SPEC_LABEL_SET = new Set(SPEC_LABELS);
  * What a node is called on screen.
  *
  * Two things this has to work around, both consequences of the Ladybug
- * migration and both measured on the PSE database:
+ * migration and both measured on a large ROS project graph:
  *
  *   - A node now carries exactly ONE label. All 47 139 of them. The old code
  *     looked for "the first label that is not ASTNode" to recover an AST
@@ -595,7 +595,7 @@ async function readCandidateSet(session, level, key) {
         // elementId(n), not id(n) — see CLAUDE.md, "Knotenidentität". id()
         // resolves to n.seq, and the builder writes AST nodes in UNWIND chunks
         // of 500 that all receive the SAME seq. The dedup a few lines below then
-        // keys on it: measured on the PSE database, 47 139 nodes arrived here as
+        // keys on it: measured on a large project graph, 47 139 nodes arrived here as
         // 10 730 and the other 36 409 were dropped as duplicates of each other.
         const allNodesResult = await session.run(`
             MATCH (n)
@@ -707,7 +707,7 @@ async function readCandidateSet(session, level, key) {
         }
 
         // --- Step 3: Load ALL edges between loaded nodes ---
-        // Same identity as the nodes: 36 993 of 50 611 edges in the PSE database
+        // Same identity as the nodes: 36 993 of 50 611 edges in a large project graph
         // have at least one endpoint whose seq is shared with another node, so
         // keying edges on id() attached them to whichever of those was written
         // last.
@@ -1195,7 +1195,7 @@ async function expandAstNode(nodeId, includeAst = false) {
         const relTypes = includeAst
             ? 'DECLARES|CONTAINS_FLOW|CONTAINS_STMT|RETURNS|CONTAINS_AST'
             : 'DECLARES|CONTAINS_FLOW|CONTAINS_STMT|RETURNS';
-        // The LIMIT was 400, silently. Five nodes in the PSE database have more
+        // The LIMIT was 400, silently. Five nodes in a large project graph have more
         // children than that, the largest 2923 — expanding one of them showed a
         // fraction of its body with nothing saying so. The cap is now high
         // enough not to bite in practice and the caller is told when it does.
@@ -1713,7 +1713,7 @@ app.get('/api/graph/predefined-queries', (req, res) => {
 // result set and its expanded neighbourhood are loaded by two different WHERE
 // clauses and must produce structurally identical rows.
 // Identity is `elementId(n)` (= n.uid, the primary key), NOT `id(n)`.
-// `id(n)` translates to `n.seq`, and seq is not unique: the PSE database has
+// `id(n)` translates to `n.seq`, and seq is not unique: a large project graph had
 // 47139 nodes and 10730 distinct seq values. Everything downstream keys nodes
 // by this id — the dashboard's node map, both ends of every link — so keying on
 // seq silently collapsed four nodes into one and hung edges off whichever of

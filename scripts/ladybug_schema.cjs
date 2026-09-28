@@ -397,7 +397,7 @@ const REL_SPECS = {
   IMPACTS:            {},
   AFFECTS:            {}, // Task -> CodeNode and Task -> Task
   RESERVES:           {}, // Task -> explicit edit scope; never impact traversal
-  TOUCHED:            { props: "at INT64, kind STRING" }, // documentary only; never lock traversal
+  TOUCHED:            { props: "at INT64, kind STRING, firstAt INT64, agentId STRING, change STRING" }, // documentary only; never lock traversal. at/firstAt: last/first edit, agentId: last editor, change: created | modified
   FULFILLED_BY:       {}, // Epic -> Task; documentary only; never lock traversal
   DEPENDS_ON:         { props: "kind STRING" }, // Task -> Task workflow order; documentary only; never lock traversal
   CREATED:            {}, // Task -> CodeNode

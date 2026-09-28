@@ -256,3 +256,26 @@ test('a field inserted above a method is credited to its class, not to the metho
     const touched = await h.session.run("MATCH (:Task {taskId:'task'})-[:TOUCHED]->(n) WHERE n:Function OR n:Class RETURN n.name AS name");
     assert.deepEqual(touched.records.map(r => r.get('name')).sort(), ['Loan']);
 });
+
+test('TOUCHED records who changed what and when, and whether the task created it', async t => {
+    const h = await fixture(t);
+    const before = 'function renewLimit(loan) {\n  return loan.renewCount < 2;\n}\n';
+    fs.writeFileSync(path.join(h.root, 'loan.js'), before);
+    // renewLimit existed long before the task started.
+    await h.session.run("CREATE (:Function {name:'renewLimit', file:'loan.js', startLine:1, endLine:3, createdAt:1000})");
+    const after = before + '\nfunction overdueFee(loan) {\n  return loan.daysLate * 2;\n}\n';
+    fs.writeFileSync(path.join(h.root, 'loan.js'), after);
+    const { appendJournal, withSnippets } = require('../lib/touch-journal.cjs');
+    const firstEdit = Date.now() - 60000;
+    appendJournal(h.root, { taskId: 'task', agentId: 'worker-a', at: firstEdit, file: 'loan.js', kind: 'Edit', ranges: withSnippets([{ start: 2, end: 2 }], after) });
+    appendJournal(h.root, { taskId: 'task', agentId: 'worker-b', at: firstEdit + 1000, file: 'loan.js', kind: 'Edit', ranges: withSnippets([{ start: 5, end: 7 }], after) });
+
+    await h.run('sync_task', { taskId: 'task' });
+    const rows = await h.session.run(`MATCH (:Task {taskId:'task'})-[r:TOUCHED]->(f:Function)
+        RETURN f.name AS name, r.agentId AS agentId, r.change AS change, r.firstAt AS firstAt, r.at AS at ORDER BY name`);
+    const got = rows.records.map(r => ({ name: r.get('name'), agentId: r.get('agentId'), change: r.get('change'), firstAt: Number(r.get('firstAt')), at: Number(r.get('at')) }));
+    assert.deepEqual(got, [
+        { name: 'overdueFee', agentId: 'worker-b', change: 'created', firstAt: firstEdit + 1000, at: firstEdit + 1000 },
+        { name: 'renewLimit', agentId: 'worker-a', change: 'modified', firstAt: firstEdit, at: firstEdit },
+    ]);
+});

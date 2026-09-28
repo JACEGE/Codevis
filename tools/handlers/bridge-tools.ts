@@ -87,8 +87,24 @@ const handlers: Record<string, ToolHandler> = {
                     } as any;
                 }
                 if (projectConfig.workMode === "planning") {
+                    // Knowledge Markdown is planning material: sync it even without a code graph.
+                    let knowledge = "";
+                    if (projectConfig.knowledge?.paths?.length) {
+                        const load = createRequire(import.meta.url);
+                        const ladybug = load(resolve(PACKAGE_ROOT, "server/ladybug-driver.cjs"));
+                        const { syncKnowledgeMarkdown } = load(resolve(PACKAGE_ROOT, "scripts/knowledge_markdown.cjs"));
+                        const driver = ladybug.workspace("project_db");
+                        const session = driver.session();
+                        try {
+                            const result = await syncKnowledgeMarkdown(session, PROJECT_ROOT, projectConfig, { log: () => {}, warn: () => {} });
+                            knowledge = ` Synchronized ${result.documents} Knowledge Markdown document(s), ${result.links} link(s)${result.unresolved.length ? `; unresolved: ${result.unresolved.join(", ")}` : ""}.`;
+                        } finally {
+                            await session.close();
+                            await driver.close();
+                        }
+                    }
                     return {
-                        content: [{ type: "text", text: "Skipped: this project is in planning mode, so no code graph is built. Switch after code exists with `codevis init code [--source <paths>]`." }],
+                        content: [{ type: "text", text: `Skipped the code graph: this project is in planning mode. Switch after code exists with \`codevis init code [--source <paths>]\`.${knowledge}` }],
                     };
                 }
             }

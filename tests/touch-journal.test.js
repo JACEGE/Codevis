@@ -123,3 +123,35 @@ test('CRLF files are matched although the tool input uses LF', () => {
     const shifted = 'x\r\ny\r\n' + 'function renewLimit() {\r\n  return true;\r\n}\r\n';
     assert.deepEqual(journal.relocate({ start: 1, end: 2, snippet: 'function renewLimit() {\n  return true;' }, shifted), { start: 3, end: 4 });
 });
+
+test('parallel subagents are credited to the task each of them claimed', async (t) => {
+    const root = tempProject(t);
+    fs.writeFileSync(path.join(root, 'a.js'), 'const a = 1;\n');
+    fs.writeFileSync(path.join(root, 'b.js'), 'const b = 1;\n');
+    const env = { ...process.env, CLAUDE_PROJECT_DIR: root };
+    for (const key of ['CODEVIS_TASK_ID', 'CODEVIS_AGENT_ID', 'CLAUDE_CODE_TEAMMATE_NAME']) delete env[key];
+    const hook = (input) => new Promise((resolve, reject) => {
+        const child = execFile(process.execPath, [HOOK], { env, timeout: 10000 }, error => (error ? reject(error) : resolve()));
+        child.stdin.end(JSON.stringify({ session_id: 'lead', ...input }));
+    });
+    const claimed = (taskId, agentId) => ({ content: [{ type: 'text', text: JSON.stringify({ status: 'OK', taskId, assignedTo: agentId }) }] });
+    // Two subagents of one session claim different tasks; a third one's claim conflicts.
+    await hook({ agent_id: 'sa1', agent_type: 'CodeVis Worker', tool_name: 'mcp__codevis_graph__claim_task', tool_input: { taskId: 'task-a', agentId: 'worker-a' }, tool_response: claimed('task-a', 'worker-a') });
+    await hook({ agent_id: 'sa2', agent_type: 'CodeVis Worker', tool_name: 'mcp__codevis_worker__get_next_task', tool_input: { agentId: 'worker-b' }, tool_response: claimed('task-b', 'worker-b') });
+    await hook({ agent_id: 'sa3', tool_name: 'mcp__codevis_graph__claim_task', tool_input: { taskId: 'task-a', agentId: 'worker-c' }, tool_response: { content: [{ type: 'text', text: '{"status":"CONFLICT"}' }] } });
+    await hook({ agent_id: 'sa2', tool_name: 'Edit', tool_input: { file_path: path.join(root, 'b.js'), new_string: 'const b = 1;' } });
+    await hook({ agent_id: 'sa1', tool_name: 'Edit', tool_input: { file_path: path.join(root, 'a.js'), new_string: 'const a = 1;' } });
+    await hook({ agent_id: 'sa3', tool_name: 'Edit', tool_input: { file_path: path.join(root, 'a.js'), new_string: 'const a = 1;' } });
+    // The lead itself never claimed anything: its own edit is not credited to a subagent's task.
+    await hook({ tool_name: 'Edit', tool_input: { file_path: path.join(root, 'a.js'), new_string: 'const a = 1;' } });
+
+    const entries = journal.readJournal(root).map(e => ({ taskId: e.taskId, agentId: e.agentId, file: e.file }));
+    assert.deepEqual(entries, [
+        { taskId: 'task-b', agentId: 'worker-b', file: 'b.js' },
+        { taskId: 'task-a', agentId: 'worker-a', file: 'a.js' },
+    ]);
+    // Completing a task forgets the claim; later edits by that agent are not credited to it.
+    await hook({ agent_id: 'sa1', tool_name: 'mcp__codevis_graph__complete_task', tool_input: { taskId: 'task-a' }, tool_response: '{"status":"OK"}' });
+    await hook({ agent_id: 'sa1', tool_name: 'Edit', tool_input: { file_path: path.join(root, 'a.js'), new_string: 'const a = 1;' } });
+    assert.equal(journal.readJournal(root).length, 2);
+});

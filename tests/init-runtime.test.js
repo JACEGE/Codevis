@@ -17,7 +17,8 @@ function project(t) {
 // Stub only the external installer; exercise the real wizard, files and CLI errors.
 function init(dir, args, failInstall = false) {
   const script = `require('node:child_process').execSync = (command) => {
-    if (!/^npm install --save-dev --save-exact codevis@/.test(command)) throw new Error('Unexpected installer: ' + command);
+    if (!/^npm install --save-dev --save-exact "codevis@/.test(command)) throw new Error('Unexpected installer: ' + command);
+    console.log('INSTALLER ' + command);
     ${failInstall ? "throw new Error('installer failed');" : "return '';"}
   }; import(${JSON.stringify(pathToFileURL(join(repo, 'lib/commands/init.mjs')).href)})
     .then(m => m.default(${JSON.stringify(args)})).catch(e => { console.error(e.message); process.exitCode = 1; });`;
@@ -77,6 +78,27 @@ test('mode switches preserve custom and executable configuration across repeated
   assert.equal(load(dir).custom, undefined);
 });
 
+test('init from a git checkout links the checkout instead of the older registry release', t => {
+  const dir = project(t);
+  const result = init(dir, ['new', '-y']);
+  assert.equal(result.status, 0, result.stderr);
+  const checkout = repo.replace(/\\/g, '/');
+  assert.match(result.stdout, new RegExp(`INSTALLER npm install --save-dev --save-exact "codevis@file:${checkout.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
+});
+
+test('--clients configures only the chosen AI clients, and re-init keeps that choice', t => {
+  const dir = project(t);
+  assert.equal(init(dir, ['new', '--clients', 'codex']).status, 0);
+  assert.equal(fs.existsSync(join(dir, '.codex/config.toml')), true);
+  assert.equal(fs.existsSync(join(dir, '.mcp.json')), false);
+  assert.equal(fs.existsSync(join(dir, '.claude/settings.local.json')), false);
+  const again = init(dir, ['-y']);
+  assert.equal(again.status, 0, again.stderr);
+  assert.match(again.stdout, /AI clients: codex/);
+  assert.equal(fs.existsSync(join(dir, '.mcp.json')), false);
+  assert.match(init(dir, ['--clients', 'cursorx']).stderr, /Unknown AI client: cursorx/);
+});
+
 test('dependency failures fail init and never report setup complete', t => {
   const dir = project(t);
   const result = init(dir, ['new', '-y'], true);
@@ -101,8 +123,10 @@ test('re-init migrates hook registrations without duplicating or replacing unrel
   assert.ok(hooks.some(h => h.command.endsWith('lock-guard.cjs"')));
   assert.ok(hooks.some(h => h.command === 'my-custom-hook'));
   const postHooks = JSON.parse(fs.readFileSync(file)).hooks.PostToolUse;
-  assert.equal(postHooks.filter(entry => entry.hooks.some(h => h.command.endsWith('touch-recorder.cjs"'))).length, 1);
-  assert.equal(postHooks[0].matcher, 'Edit|Write|MultiEdit');
+  // One touch-recorder entry per matcher, however often init runs: edits,
+  // and the task claims that tell a subagent's edits which task they belong to.
+  assert.deepEqual(postHooks.filter(entry => entry.hooks.some(h => h.command.endsWith('touch-recorder.cjs"'))).map(entry => entry.matcher),
+    ['Edit|Write|MultiEdit', 'mcp__codevis_.*__(claim_task|get_next_task|complete_task)']);
   const server = JSON.parse(fs.readFileSync(join(dir, '.mcp.json'))).mcpServers.codevis_graph;
   assert.equal(server.command, 'node');
   // The child resolves cwd through macOS's /var -> /private/var alias.

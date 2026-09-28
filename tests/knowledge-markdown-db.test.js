@@ -41,6 +41,23 @@ test('Markdown sync preserves exact IDs, incoming links and unambiguous outgoing
     } finally { await db.cleanup(); fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('Markdown sync replaces only its own outgoing links, not links drawn by tools', async () => {
+    const db = await openTestDb();
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codevis-knowledge-tool-links-'));
+    try {
+        const config = { knowledge: { paths: ['.'] } }, quiet = { log() {}, warn() {} };
+        await db.session.run("CREATE (:Task {taskId:'from-file'}), (:Task {taskId:'from-tool'})");
+        fs.writeFileSync(path.join(root, 'a.md'), '---\nid: a\ntitle: A\ntasks: [from-file]\n---\nA');
+        await syncKnowledgeMarkdown(db.session, root, config, quiet);
+        // create_task knowledgeLinks / link_knowledge draw a plain APPLIES_TO.
+        await db.session.run("MATCH (k:Knowledge {docId:'a'}), (t:Task {taskId:'from-tool'}) MERGE (k)-[:APPLIES_TO]->(t)");
+        fs.writeFileSync(path.join(root, 'a.md'), '---\nid: a\ntitle: A\n---\nA without task');
+        await syncKnowledgeMarkdown(db.session, root, config, quiet);
+        const linked = await db.session.run("MATCH (:Knowledge {docId:'a'})-[:APPLIES_TO]->(t:Task) RETURN t.taskId AS id");
+        assert.deepEqual(linked.records.map(r => r.get('id')), ['from-tool']);
+    } finally { await db.cleanup(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('failed Markdown replacement preserves deleted notes, content, and authored incoming links', async t => {
     const db = await openTestDb();
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codevis-knowledge-atomic-'));

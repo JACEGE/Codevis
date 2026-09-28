@@ -131,9 +131,11 @@ async function replaceKnowledgeDocuments(session, docs) {
         } else {
             await session.run(`MATCH (k {uid:$uid}) SET k.label='Knowledge', k.name=$name, k.content=$content, k.category=$category, k.kind='markdown', k.docId=$docId, k.sourcePath=$sourcePath, k.tags=$tags, k.updatedAt=timestamp()`, { ...doc, name: doc.title, docId: doc.id });
         }
-        // Markdown is authoritative for its outgoing links.
-        await session.run(`MATCH (k {uid:$uid})-[r:APPLIES_TO]->() DELETE r`, { uid: doc.uid });
-        await session.run(`MATCH (k {uid:$uid})-[r:REFERENCES]->() DELETE r`, { uid: doc.uid });
+        // Markdown is authoritative for the links it wrote itself (via='markdown').
+        // Links drawn by tools on the same node (create_task knowledgeLinks,
+        // link_knowledge) are not in the file and must survive every rebuild.
+        await session.run(`MATCH (k {uid:$uid})-[r:APPLIES_TO]->() WHERE r.via = 'markdown' DELETE r`, { uid: doc.uid });
+        await session.run(`MATCH (k {uid:$uid})-[r:REFERENCES]->() WHERE r.via = 'markdown' DELETE r`, { uid: doc.uid });
     }
 
     const byId = new Map(docs.map(doc => [doc.id, doc]));
@@ -148,19 +150,19 @@ async function replaceKnowledgeDocuments(session, docs) {
         for (const target of doc.appliesTo) {
             const [file, symbol] = slash(target).split('#');
             const result = symbol
-                ? await session.run(`MATCH (k {uid:$uid}), (n {file:$file, name:$symbol}) WHERE n:Function OR n:Class OR n:Component MERGE (k)-[:APPLIES_TO]->(n) RETURN count(n) AS c`, { uid: doc.uid, file, symbol })
-                : await session.run(`MATCH (k {uid:$uid}), (n:File {path:$file}) MERGE (k)-[:APPLIES_TO]->(n) RETURN count(n) AS c`, { uid: doc.uid, file });
+                ? await session.run(`MATCH (k {uid:$uid}), (n {file:$file, name:$symbol}) WHERE n:Function OR n:Class OR n:Component MERGE (k)-[r:APPLIES_TO]->(n) SET r.via = 'markdown' RETURN count(n) AS c`, { uid: doc.uid, file, symbol })
+                : await session.run(`MATCH (k {uid:$uid}), (n:File {path:$file}) MERGE (k)-[r:APPLIES_TO]->(n) SET r.via = 'markdown' RETURN count(n) AS c`, { uid: doc.uid, file });
             const n = count(result); links += n; if (!n) unresolved.push(`${doc.sourcePath}: appliesTo '${target}'`);
         }
         for (const taskId of doc.tasks) {
-            const result = await session.run(`MATCH (k {uid:$uid}), (t:Task {taskId:$taskId}) MERGE (k)-[:APPLIES_TO]->(t) RETURN count(t) AS c`, { uid: doc.uid, taskId });
+            const result = await session.run(`MATCH (k {uid:$uid}), (t:Task {taskId:$taskId}) MERGE (k)-[r:APPLIES_TO]->(t) SET r.via = 'markdown' RETURN count(t) AS c`, { uid: doc.uid, taskId });
             const n = count(result); links += n; if (!n) unresolved.push(`${doc.sourcePath}: task '${taskId}'`);
         }
         for (const ref of new Set(doc.references)) {
             // Exact document IDs win over titles; repeated titles are ambiguous.
             const target = byId.get(ref) || byTitle.get(ref);
             if (!target) { unresolved.push(`${doc.sourcePath}: reference '[[${ref}]]'`); continue; }
-            await session.run(`MATCH (a {uid:$from}), (b {uid:$to}) MERGE (a)-[:REFERENCES]->(b)`, { from: doc.uid, to: target.uid });
+            await session.run(`MATCH (a {uid:$from}), (b {uid:$to}) MERGE (a)-[r:REFERENCES]->(b) SET r.via = 'markdown'`, { from: doc.uid, to: target.uid });
             links++;
         }
     }

@@ -10,8 +10,17 @@
  *
  * Task resolution, most explicit first:
  *   CODEVIS_TASK_ID=<taskId>             → that task
+ *   the task this (sub)agent claimed     → that task (see below)
  *   CODEVIS_AGENT_ID / teammate name     → the agent's only in_progress task
  *   neither                              → nothing is recorded
+ *
+ * Subagents share the parent's process and environment, so the environment
+ * cannot tell them apart; the hook input can. Claude Code sends `agent_id`
+ * with every tool call made inside a subagent, MCP calls included. The same
+ * hook therefore also runs after claim_task/get_next_task and remembers which
+ * task that agent took (.claude/agent-tasks/<agent>.json, one file per agent
+ * so parallel subagents never overwrite each other), and forgets it after
+ * complete_task. Calls outside any subagent are keyed by session.
  * An unidentified session (a person, or a lead making a quick fix) is never
  * credited to someone else's running task. Anything ambiguous records
  * nothing: inventing history is worse than a gap.
@@ -20,10 +29,11 @@
  * failure just means this edit is not attributed.
  */
 
-const { existsSync, readFileSync } = require('fs');
+const { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync } = require('fs');
 const { resolve, relative } = require('path');
 
 const TOOLS = new Set(['Edit', 'Write', 'MultiEdit']);
+const TASK_TOOL = /^mcp__codevis_[a-z]+__(claim_task|get_next_task|complete_task)$/;
 const TIMEOUT_MS = Number(process.env.CODEVIS_TOUCH_TIMEOUT_MS || 4000);
 
 const agentId = process.env.CODEVIS_AGENT_ID
@@ -57,9 +67,60 @@ async function resolveTask(session) {
     return result.records.length === 1 ? result.records[0].get('taskId') : null;
 }
 
+// ── Which task each (sub)agent claimed ──────────────────────────────────────
+
+function agentKey(data) {
+    const key = data.agent_id ? `agent-${data.agent_id}` : data.session_id ? `session-${data.session_id}` : null;
+    return key && key.replace(/[^A-Za-z0-9_.-]/g, '_');
+}
+
+function claimsDir(projectDir) { return resolve(projectDir, '.claude/agent-tasks'); }
+
+function readClaim(projectDir, data) {
+    const key = agentKey(data);
+    if (!key) return null;
+    try { return JSON.parse(readFileSync(resolve(claimsDir(projectDir), `${key}.json`), 'utf8')); } catch { return null; }
+}
+
+/** The tool result as plain text: MCP results arrive as content blocks or strings. */
+function responseText(response) {
+    if (typeof response === 'string') return response;
+    const blocks = Array.isArray(response) ? response : Array.isArray(response?.content) ? response.content : [response];
+    return blocks.map(block => typeof block === 'string' ? block : block?.text ?? JSON.stringify(block ?? '')).join('\n');
+}
+
+function trackTaskTool(data, projectDir) {
+    const tool = TASK_TOOL.exec(data.tool_name)?.[1];
+    const key = agentKey(data);
+    if (!tool || !key) return;
+    const text = responseText(data.tool_response).replace(/\\"/g, '"');
+    const dir = claimsDir(projectDir);
+    if (tool === 'complete_task') {
+        const taskId = data.tool_input?.taskId;
+        for (const name of existsSync(dir) ? readdirSync(dir) : []) {
+            try {
+                if (JSON.parse(readFileSync(resolve(dir, name), 'utf8')).taskId === taskId) rmSync(resolve(dir, name), { force: true });
+            } catch { /* unreadable entry: leave it */ }
+        }
+        return;
+    }
+    // Only a successful claim assigns the task; a conflict leaves the agent where it was.
+    if (!/"status"\s*:\s*"OK"/.test(text)) return;
+    const taskId = data.tool_input?.taskId || /"taskId"\s*:\s*"([^"]+)"/.exec(text)?.[1];
+    if (!taskId) return;
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(resolve(dir, `${key}.json`), JSON.stringify({
+        taskId,
+        agentId: data.tool_input?.agentId || agentId || (data.agent_type ? `${data.agent_type}-${data.agent_id}` : null),
+        agentType: data.agent_type || null,
+        at: Date.now(),
+    }) + '\n');
+}
+
 async function record(data) {
-    if (!TOOLS.has(data.tool_name) || !data.tool_input?.file_path) return;
     const projectDir = process.env.CLAUDE_PROJECT_DIR || process.env.CODEVIS_PROJECT_DIR || process.cwd();
+    if (TASK_TOOL.test(data.tool_name || '')) return trackTaskTool(data, projectDir);
+    if (!TOOLS.has(data.tool_name) || !data.tool_input?.file_path) return;
     const journal = loadCodevis(projectDir, 'lib/touch-journal.cjs');
     if (!journal) return;
 
@@ -73,13 +134,14 @@ async function record(data) {
     });
     if (!ranges.length) return;
 
+    const claim = process.env.CODEVIS_TASK_ID ? null : readClaim(projectDir, data);
     // No identity and no explicit task: nothing to attribute, skip the graph.
-    if (!agentId && !process.env.CODEVIS_TASK_ID) return;
+    if (!agentId && !process.env.CODEVIS_TASK_ID && !claim) return;
     // The graph is only asked WHICH task this is. No TOUCHED edge is written
     // here: the graph still holds pre-edit line numbers, so a field inserted
     // above a function was credited to that function. sync_task/complete_task
     // replay the journal after re-parsing, against current spans.
-    let taskId = process.env.CODEVIS_TASK_ID || null;
+    let taskId = process.env.CODEVIS_TASK_ID || claim?.taskId || null;
     const ladybug = !taskId && existsSync(resolve(projectDir, 'codevis.config.cjs')) ? loadCodevis(projectDir, 'server/ladybug-driver.cjs') : null;
     for (const db of ladybug ? workspaces(projectDir) : []) {
         const driver = ladybug.workspace(db);
@@ -96,7 +158,7 @@ async function record(data) {
     }
     if (!taskId) return;
     journal.appendJournal(projectDir, {
-        taskId, agentId, file, kind: data.tool_name, at: Date.now(),
+        taskId, agentId: claim?.agentId || agentId, file, kind: data.tool_name, at: Date.now(),
         sessionId: data.session_id || null, ranges: journal.withSnippets(ranges, content),
     });
 }

@@ -27,8 +27,8 @@ function withJournalFiles(files: Array<{ file: string }>, projectDir: string, ta
 
 async function applyTouchJournal(session: any, projectDir: string, taskId: string, consume: boolean) {
     try {
-        const applied = await applyJournal(projectDir, taskId, (file: string, ranges: any[], kind: string) =>
-            recordTouchedRanges(session, { taskId, kind, file, ranges }));
+        const applied = await applyJournal(projectDir, taskId, (file: string, ranges: any[], kind: string, meta: any) =>
+            recordTouchedRanges(session, { taskId, kind, file, ranges, ...meta }));
         if (consume && applied.entries) removeJournalEntries(projectDir, taskId);
         return { edits: applied.entries, touched: applied.touched };
     } catch (error: any) {
