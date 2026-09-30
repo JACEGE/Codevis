@@ -183,6 +183,10 @@ function App() {
         setCallStack, setDebugBranches, setDebugPath, setDebugStep,
         setDfsTree, setSequentialMode, setTraceDirection,
     } = usePathfinder({ replaceActiveLinks });
+    // The node the loaded tree was traced from. A selection changed on another
+    // tab keeps the old tree (tab switches clear nothing), so arriving at the
+    // Pathfinder must compare owners, not merely check that a tree exists.
+    const dfsTreeOwnerRef = useRef(null);
 
     // Rolling Window state
     const {
@@ -563,6 +567,7 @@ function App() {
             if (!current()) return;
             if (data.tree) {
                 dfsTreeRef.current = data.tree;
+                dfsTreeOwnerRef.current = nodeId;
                 setDfsTree(data.tree);
                 setDebugStep(0);
                 const children = data.tree.children || [];
@@ -604,6 +609,7 @@ function App() {
             setFocusNodeId(null);
             setExploreGraphData(data.graph);
             dfsTreeRef.current = data.tree;
+            dfsTreeOwnerRef.current = selectedNode;
             setDfsTree(data.tree);
             setSequentialMode(true);
             setDebugStep(0);
@@ -726,7 +732,7 @@ function App() {
     // tabs rather than merely preserved.
     useEffect(() => {
         if (rightTab !== 'pathfinder' || selectedNode == null) return;
-        if (dfsTreeRef.current) return;
+        if (dfsTreeRef.current && dfsTreeOwnerRef.current === selectedNode) return;
         loadTrace(selectedNode);
     }, [rightTab, selectedNode, loadTrace]);
 

@@ -33,11 +33,22 @@ async function syncGraphFile(session, snapshot) {
                 SET n.startLine=fn.startLine,n.endLine=fn.endLine,n.bodySnippet=fn.snippet,n.removedFromDisk=false`,
             { functions:functions.map(({ calls, ...fn }) => fn), file });
         }
-        const created = functions.filter(fn => !graphNames.has(fn.name)).map(fn => {
-            const uid = createHash('sha256').update(`Function::${fn.name}::${file}`).digest('hex').slice(0, 16);
-            return { name:fn.name, startLine:fn.startLine, endLine:fn.endLine, snippet:fn.snippet,
-                uid, ipv6:`fd00:0001:${uid.slice(0, 4)}:${uid.slice(4, 8)}:0000:0000:0000:0000` };
-        });
+        const uidFor = (name, n) => createHash('sha256').update(`Function::${name}::${file}${n > 1 ? `::${n}` : ''}`).digest('hex').slice(0, 16);
+        const created = functions.filter(fn => !graphNames.has(fn.name)).map(fn => ({
+            name:fn.name, startLine:fn.startLine, endLine:fn.endLine, snippet:fn.snippet, uid: uidFor(fn.name, 1) }));
+        // A function renamed or moved in place keeps its uid (the primary key
+        // cannot change), so the uid derived from name+file may already belong
+        // to a node with another name. MERGE on it overwrote that node: bring
+        // the old name back after a rename and the renamed function vanished.
+        for (const fn of created) {
+            for (let n = 1; ; n++) {
+                fn.uid = uidFor(fn.name, n);
+                const owner = await tx.run('MATCH (x:Function {uid:$uid}) RETURN x.name AS name, x.file AS file', { uid: fn.uid });
+                const row = owner.records[0];
+                if (!row || (row.get('name') === fn.name && row.get('file') === file)) break;
+            }
+            fn.ipv6 = `fd00:0001:${fn.uid.slice(0, 4)}:${fn.uid.slice(4, 8)}:0000:0000:0000:0000`;
+        }
         if (created.length) {
             await tx.run(`UNWIND $functions AS fn
                 MERGE (f:File {path:$file})

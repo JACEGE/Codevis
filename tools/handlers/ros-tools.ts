@@ -4,6 +4,7 @@ import { resolve, dirname } from "path";
 import { writeFileSync, mkdirSync } from "fs";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
+import { projectRoot } from "../lib/project-root.js";
 
 // All ROS graph logic lives in scripts/ros/ (single source of truth, shared
 // with the builder and the tests). These handlers are thin MCP wrappers.
@@ -11,7 +12,7 @@ const require = createRequire(import.meta.url);
 const __dirname_ros = dirname(fileURLToPath(import.meta.url));
 const rosDb = require(resolve(__dirname_ros, "../../scripts/ros/ros_db.cjs"));
 
-const ROS_PROJECT_ROOT = process.env.CODEVIS_PROJECT_DIR || resolve(__dirname_ros, "../..");
+const ROS_PROJECT_ROOT = projectRoot();
 
 /**
  * Resolve an agent-supplied output path inside the project, or throw.

@@ -86,46 +86,7 @@ function processExists(pid) {
     catch (e) { return e.code === 'EPERM'; }
 }
 
-/**
- * Best-effort wall-clock start time for a process.
- *
- * A PID alone is not an identity: after a daemon exits, Windows (and Unix)
- * eventually reuses its number. If the old instance marker survives a crash,
- * processExists() then mistakes an unrelated process for the daemon forever.
- * Comparing start times distinguishes the reused PID without weakening the
- * single-writer guard. Unknown/unqueryable processes deliberately return null
- * so callers can fail closed and keep treating the marker as owned.
- */
-function processStartedAt(pid) {
-    try {
-        let raw;
-        if (process.platform === 'win32') {
-            raw = require('node:child_process').execFileSync(
-                'powershell.exe',
-                [
-                    '-NoProfile',
-                    '-NonInteractive',
-                    '-Command',
-                    `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().ToString('o')`,
-                ],
-                // A cold PowerShell start on a GitHub Windows runner can take
-                // more than two seconds. Timing out here makes a decades-old
-                // marker look current and prevents the daemon from starting.
-                { encoding: 'utf8', timeout: 10000, windowsHide: true },
-            ).trim();
-        } else {
-            raw = require('node:child_process').execFileSync(
-                'ps',
-                ['-o', 'lstart=', '-p', String(pid)],
-                { encoding: 'utf8', timeout: 2000 },
-            ).trim();
-        }
-        const timestamp = Date.parse(raw);
-        return Number.isFinite(timestamp) ? timestamp : null;
-    } catch (_) {
-        return null;
-    }
-}
+const { processStartedAt } = require('../lib/process-start.cjs');
 
 function instanceOwnerIsCurrent(owner) {
     if (!owner || !processExists(owner.pid)) return false;
@@ -142,38 +103,90 @@ function instanceOwnerIsCurrent(owner) {
     return ownerStartedAt <= markerStartedAt + 5000;
 }
 
+function writeMarker() {
+    const fd = fs.openSync(INSTANCEFILE, 'wx');
+    try {
+        fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, dataDir: DATA_DIR, startedAt: new Date().toISOString() }));
+    } finally {
+        fs.closeSync(fd);
+    }
+}
+
+function readMarker() {
+    try { return JSON.parse(fs.readFileSync(INSTANCEFILE, 'utf8')); } catch (_) { return null; }
+}
+
+// A fresh empty/partial marker is an election in progress, not a stale one:
+// open('wx') wins before the winner has written its JSON.
+function markerIsFreshPartial(owner) {
+    if (owner) return false;
+    let ageMs = Infinity;
+    try { ageMs = Date.now() - fs.statSync(INSTANCEFILE).mtimeMs; } catch (_) { return false; }
+    return ageMs < 10000;
+}
+
+const RECLAIM_STALE_MS = 30000;
+
+/**
+ * Removing a stale marker is only safe for one contender at a time. Every
+ * contender used to unlink the path it had judged stale — but by then a faster
+ * contender could already have replaced it with a live marker, which the slow
+ * one deleted, and both went on to own the database (reproduced: 2–4 daemons on
+ * one data dir). The reclaim directory serialises the unlink, and the marker is
+ * re-read under it so a replacement is never mistaken for the stale original.
+ */
+function reclaimStaleMarker() {
+    const reclaim = `${INSTANCEFILE}.reclaim`;
+    try {
+        fs.mkdirSync(reclaim);
+    } catch (e) {
+        if (e.code !== 'EEXIST') throw e;
+        let ageMs = 0;
+        try { ageMs = Date.now() - fs.statSync(reclaim).mtimeMs; } catch (_) { return 'retry'; }
+        if (ageMs < RECLAIM_STALE_MS) return 'busy';
+        // A contender died while reclaiming. Remove its directory and retry.
+        try { fs.rmdirSync(reclaim); } catch (_) { /* another contender cleaned up */ }
+        return 'retry';
+    }
+    try {
+        const owner = readMarker();
+        if (instanceOwnerIsCurrent(owner) || markerIsFreshPartial(owner)) return 'owned';
+        try { fs.unlinkSync(INSTANCEFILE); } catch (_) { /* already gone */ }
+        try {
+            writeMarker();
+            return 'claimed';
+        } catch (e) {
+            if (e.code === 'EEXIST') return 'owned'; // a fresh contender got there first
+            throw e;
+        }
+    } finally {
+        try { fs.rmdirSync(reclaim); } catch (_) { /* nothing to release */ }
+    }
+}
+
 function claimInstance() {
     fs.mkdirSync(path.dirname(INSTANCEFILE), { recursive: true });
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
         try {
-            const fd = fs.openSync(INSTANCEFILE, 'wx');
-            try {
-                fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, dataDir: DATA_DIR, startedAt: new Date().toISOString() }));
-            } finally {
-                fs.closeSync(fd);
-            }
+            writeMarker();
             return true;
         } catch (e) {
             if (e.code !== 'EEXIST') throw e;
-            let owner = null;
-            try { owner = JSON.parse(fs.readFileSync(INSTANCEFILE, 'utf8')); } catch (_) { /* stale/broken marker */ }
-            if (instanceOwnerIsCurrent(owner)) {
-                console.error(`[ladybug-daemon ${process.pid}] another daemon (pid ${owner.pid}) already owns ${DATA_DIR}; exiting`);
-                return false;
-            }
-            // open('wx') wins before the winner has written its JSON. Treat a
-            // fresh empty/partial marker as an election in progress, not stale:
-            // unlinking it here lets both contenders claim successfully.
-            if (!owner) {
-                let ageMs = 0;
-                try { ageMs = Date.now() - fs.statSync(INSTANCEFILE).mtimeMs; } catch (_) { /* disappeared */ }
-                if (ageMs < 10000) {
-                    console.error(`[ladybug-daemon ${process.pid}] another daemon is claiming ${DATA_DIR}; exiting`);
-                    return false;
-                }
-            }
-            try { fs.unlinkSync(INSTANCEFILE); } catch (_) { /* another contender reclaimed it */ }
         }
+        const owner = readMarker();
+        if (instanceOwnerIsCurrent(owner)) {
+            console.error(`[ladybug-daemon ${process.pid}] another daemon (pid ${owner.pid}) already owns ${DATA_DIR}; exiting`);
+            return false;
+        }
+        if (markerIsFreshPartial(owner)) {
+            console.error(`[ladybug-daemon ${process.pid}] another daemon is claiming ${DATA_DIR}; exiting`);
+            return false;
+        }
+        const outcome = reclaimStaleMarker();
+        if (outcome === 'claimed') return true;
+        if (outcome === 'retry') continue;
+        console.error(`[ladybug-daemon ${process.pid}] another daemon is claiming ${DATA_DIR}; exiting`);
+        return false;
     }
     return false;
 }
@@ -768,6 +781,15 @@ function sendJson(res, status, obj) {
 
 const server = http.createServer(async (req, res) => {
     try {
+        // Once shutdown has begun, refuse new work before it touches a database.
+        // Requests still arriving on keep-alive sockets were otherwise accepted
+        // and then cut off by the exit, leaving the client unable to tell whether
+        // a write had been applied.
+        if (shuttingDown) {
+            res.setHeader('Connection', 'close');
+            sendJson(res, 503, { error: 'daemon is shutting down', shuttingDown: true });
+            return;
+        }
         if (!require('./browser-origin.cjs').isAllowedBrowserOrigin(req.headers.origin)) {
             sendJson(res, 403, { error: 'Browser origin is not allowed.' });
             return;

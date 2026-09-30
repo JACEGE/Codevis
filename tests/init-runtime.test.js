@@ -198,3 +198,27 @@ test('invalid Codex config fails init without a false setup-complete message', t
   assert.doesNotMatch(result.stdout, /Setup complete/);
   assert.equal(fs.readFileSync(file, 'utf8'), 'invalid = [');
 });
+
+test('non-interactive init defaults to the detected source folders, not a missing ./src', t => {
+  const dir = project(t);
+  fs.rmSync(join(dir, 'src'), { recursive: true });
+  fs.mkdirSync(join(dir, 'lib'));
+  const result = init(dir, ['-y', '--clients', 'claude']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(load(dir).workspaces.project_db.sourceDir, ['lib']);
+});
+
+test('re-init of a copied project re-points the touch recorder, and bad JSON names its file', t => {
+  const original = project(t);
+  assert.equal(init(original, ['-y', '--clients', 'claude']).status, 0);
+  const copy = fs.mkdtempSync(join(tmpdir(), 'codevis-init-copy-'));
+  t.after(() => fs.rmSync(copy, { recursive: true, force: true }));
+  fs.cpSync(original, copy, { recursive: true });
+  assert.equal(init(copy, ['-y', '--clients', 'claude']).status, 0);
+  const settings = fs.readFileSync(join(copy, '.claude/settings.local.json'), 'utf8');
+  assert.ok(!settings.includes(original.replace(/\\/g, '/')), 'a hook still points at the original project');
+  fs.writeFileSync(join(copy, '.mcp.json'), '// hand edited\n{}\n');
+  const broken = init(copy, ['-y', '--clients', 'claude']);
+  assert.equal(broken.status, 1);
+  assert.match(broken.stderr, /Cannot parse .*\.mcp\.json/);
+});

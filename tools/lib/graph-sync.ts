@@ -1,15 +1,13 @@
 import { readFileSync, writeFileSync, renameSync, statSync, existsSync } from "fs";
 import { randomUUID } from "crypto";
-import { resolve, dirname } from "path";
-import { fileURLToPath } from "url";
+import { resolve } from "path";
 import { getLanguageAndQuery, getParserInstance, EDIT_LANG_CONFIGS } from "./treesitter.js";
 import { graphInt } from "./graph.js";
 import { createRequire } from "node:module";
+import { projectRoot } from "./project-root.js";
 const { getSyncFiles } = createRequire(import.meta.url)('./task-context.cjs');
 const { syncGraphFile } = createRequire(import.meta.url)('../../server/graph-file-sync.cjs');
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 // ── Lock manifest: write locks.json for fast hook lookups ─────────
 export async function syncLockManifest(driver: any) {
@@ -39,7 +37,7 @@ export async function syncLockManifest(driver: any) {
                 });
             }
             // Navigate to project root for lock manifest
-            const projectDir = process.env.CODEVIS_PROJECT_DIR || resolve(__dirname, "../..");
+            const projectDir = projectRoot();
             const manifestPath = resolve(projectDir, ".claude/locks.json");
             const tmpManifest = manifestPath + `.${randomUUID()}.tmp`;
             writeFileSync(tmpManifest, JSON.stringify(locks, null, 2));
@@ -366,7 +364,7 @@ export async function commitSyncWave(
     );
 
     const { resolve: pathResolve, extname } = await import("path");
-    const projectDir = process.env.CODEVIS_PROJECT_DIR || pathResolve(process.cwd());
+    const projectDir = projectRoot();
 
     let totalCreated = 0;
     let totalRemoved = 0;

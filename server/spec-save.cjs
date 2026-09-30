@@ -51,4 +51,22 @@ async function saveSpecSource({ filePath, text, lockDirectory, importSpec }, fil
     }
 }
 
-module.exports = { saveSpecSource };
+// `sourceFile` stammt aus dem Graphen und damit letztlich aus einer Anfrage
+// (`/api/spec/import` übernimmt den frei wählbaren specId). Er darf weder
+// absolut sein noch per `..` aus der Wurzel herausführen, unter der er
+// aufgelöst wird — sonst überschreibt ein PUT beliebige .puml-Dateien.
+function isInsideRoot(root, candidate) {
+    const rel = path.relative(path.resolve(root), candidate);
+    return rel !== '' && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
+}
+
+function firstContainedSpecFile(roots, sourceFile, filesystem = fs) {
+    if (!sourceFile || path.isAbsolute(sourceFile)) return null;
+    for (const root of roots) {
+        const candidate = path.resolve(root, sourceFile);
+        if (isInsideRoot(root, candidate) && filesystem.existsSync(candidate)) return candidate;
+    }
+    return null;
+}
+
+module.exports = { saveSpecSource, firstContainedSpecFile };

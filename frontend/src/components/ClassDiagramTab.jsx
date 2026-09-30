@@ -119,6 +119,9 @@ export default function ClassDiagramTab({ db }) {
     }, [query]);
 
     useEffect(() => {
+        // A result without a diagram must not leave the previous one on screen
+        // next to the new counters.
+        if (data && !data.mermaid) setSvg(null);
         if (!data || !data.mermaid) return undefined;
         let alive = true;
         setRenderError(null);
@@ -142,6 +145,9 @@ export default function ClassDiagramTab({ db }) {
             // veralteter Tab — er bekommt eine eigene Anzeige mit Reload.
             .catch((e) => {
                 if (!alive) return;
+                // The previous SVG belongs to other data; keeping it made the
+                // viewport look like it matched the new numbers.
+                setSvg(null);
                 setRenderError({ message: e.message || String(e), stale: isChunkLoadError(e) });
             })
             .finally(() => { if (alive) setRendering(false); });

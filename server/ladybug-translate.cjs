@@ -172,7 +172,9 @@ function tokenize(src) {
             if (!closed) {
                 throw new Error(`Unterminated backtick-quoted identifier at offset ${i}`);
             }
-            tokens.push({ kind: 'ident', value: buf });
+            // Remember the quoting: a reserved word (`order`) or an identifier
+            // with spaces is only valid output while it stays quoted.
+            tokens.push({ kind: 'ident', value: buf, quoted: true });
             i = j;
             continue;
         }
@@ -429,7 +431,9 @@ function translate(cypher) {
     incrementListIndices(tokens);
 
     // Re-serialise
-    const out = tokens.map(t => t.value).join('');
+    const out = tokens.map(t => (t.kind === 'ident' && t.quoted
+        ? `\`${t.value.replace(/`/g, '``')}\``
+        : t.value)).join('');
     return { cypher: out, injectNow, creates: acc.creates };
 }
 
@@ -723,7 +727,7 @@ function tryRewriteNodePattern(tokens, open, inCreate, acc) {
                 inject.push(
                     { kind: 'ident', value: 'label' },
                     { kind: 'punc', value: ':' },
-                    { kind: 'string', value: `'${primaryLabel}'` },
+                    { kind: 'string', value: cypherString(primaryLabel) },
                 );
             }
             for (const label of foldInLabels) {
@@ -755,7 +759,7 @@ function tryRewriteNodePattern(tokens, open, inCreate, acc) {
         if (primaryLabel) {
             full.push(
                 { kind: 'ident', value: 'label' }, { kind: 'punc', value: ':' },
-                { kind: 'string', value: `'${primaryLabel}'` },
+                { kind: 'string', value: cypherString(primaryLabel) },
             );
         }
         for (const label of foldInLabels) {
@@ -942,7 +946,7 @@ function buildPredicateTokens(varName, op, label) {
         { kind: 'punc', value: op[0] },
         ...(op.length > 1 ? [{ kind: 'punc', value: op[1] }] : []),
         { kind: 'ws', value: ' ' },
-        { kind: 'string', value: `'${label}'` },
+        { kind: 'string', value: cypherString(label) },
     ];
 }
 
@@ -1145,11 +1149,18 @@ function parseMapEntries(tokens, braceOpen, braceClose) {
     return entries;
 }
 
+// Labels and property keys may arrive backtick-quoted and then contain any
+// character. They become string literals here, so quote them as such — a raw
+// `'` in ``(n:`Fo'o`)`` otherwise ends the literal early.
+function cypherString(text) {
+    return `'${String(text).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
 const PLUS = () => [{ kind: 'ws', value: ' ' }, { kind: 'punc', value: '+' }, { kind: 'ws', value: ' ' }];
 
 /** Build a deterministic uid expression `'Label||k1=' + v1 + '||k2=' + v2 …`. */
 function buildGenericUidTokens(label, entries) {
-    if (entries.length === 0) return [{ kind: 'string', value: `'${label}'` }];
+    if (entries.length === 0) return [{ kind: 'string', value: cypherString(label) }];
     // Sort keys canonically so the derived uid does NOT depend on the order the
     // caller wrote the MERGE props: `MERGE (s {name,file})` and `MERGE (s {file,name})`
     // are the same logical node and must derive the SAME uid — otherwise Kuzu
@@ -1160,7 +1171,7 @@ function buildGenericUidTokens(label, entries) {
     const toks = [];
     sorted.forEach((e, i) => {
         if (i > 0) toks.push(...PLUS());
-        toks.push({ kind: 'string', value: i === 0 ? `'${label}||${e.key}='` : `'||${e.key}='` });
+        toks.push({ kind: 'string', value: cypherString(i === 0 ? `${label}||${e.key}=` : `||${e.key}=`) });
         toks.push(...PLUS());
         toks.push(...e.valTokens.map(t => ({ ...t })));
     });
@@ -1285,7 +1296,7 @@ function rewriteOneMerge(tokens, open, acc) {
         { kind: 'ident', value: varName }, { kind: 'punc', value: '.' }, { kind: 'ident', value: col },
         { kind: 'ws', value: ' ' }, { kind: 'punc', value: '=' }, { kind: 'ws', value: ' ' }, ...valToks,
     ];
-    const items = [assign('label', [{ kind: 'string', value: `'${primaryLabel}'` }])];
+    const items = [assign('label', [{ kind: 'string', value: cypherString(primaryLabel) }])];
     for (const e of onCreateProps) items.push(assign(e.key, e.valTokens.map(t => ({ ...t }))));
     const managedFoldIns = FOLD_INS_BY_PRIMARY[primaryLabel] || extraLabels;
     for (const label of managedFoldIns) {
@@ -1404,7 +1415,7 @@ function rewriteSetLabels(tokens) {
                     const col = FOLD_IN_LABELS[label];
                     const rhs = col
                         ? { kind: 'ident', value: 'true' }
-                        : { kind: 'string', value: `'${label}'` };
+                        : { kind: 'string', value: cypherString(label) };
                     const repl = [
                         { kind: 'ident', value: varName },
                         { kind: 'punc', value: '.' },
@@ -1494,6 +1505,14 @@ const SELF_TEST_CASES = [
             "MATCH (n) WHERE coalesce(n.isRuntime, false) <> true AND n.label <> 'Counter' AND n.label <> 'Task' DETACH DELETE n"],
         ['MATCH (n) WHERE NOT n:Component RETURN n',
             'MATCH (n) WHERE coalesce(n.isComponent, false) <> true RETURN n'],
+        // A backtick-quoted label becomes a string literal and must be escaped.
+        ["MATCH (n:`Fo'o`) RETURN n",
+            "MATCH (n:CodeNode {label:'Fo\\'o'}) RETURN n"],
+        ["MATCH (n) WHERE n:`X'Y` RETURN n",
+            "MATCH (n) WHERE n.label = 'X\\'Y' RETURN n"],
+        // Quoted identifiers stay quoted: `order` is a reserved word.
+        ['MATCH (s)-[r]->(t) RETURN r.`order` AS `order`',
+            'MATCH (s)-[r]->(t) RETURN r.`order` AS `order`'],
 ];
 
 module.exports = { translate, SELF_TEST_CASES };

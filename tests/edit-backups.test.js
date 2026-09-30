@@ -48,3 +48,15 @@ test('backup file binding uses the project root and normalizes equivalent paths'
     assert.equal(backupFileMatches(token, 'src/app.js', path.join(root, 'other-project')), false);
     assert.equal(backupFileMatches('old-token', 'src/app.js', root), null);
 });
+
+test('stale-edit recovery finds only the crashed agent\'s backups of that file, newest first', () => {
+    const { createBackupToken, latestBackupsFor } = require('../tools/lib/edit-backups.cjs');
+    const root = path.resolve(__dirname, '..');
+    const older = createBackupToken('src/app.js', 'worker-1', root).replace(/^\d+/, '1000');
+    const newer = createBackupToken('src/app.js', 'worker-1', root).replace(/^\d+/, '2000');
+    const otherAgent = createBackupToken('src/app.js', 'worker-2', root);
+    const otherFile = createBackupToken('src/webapp.js', 'worker-1', root);
+    const entries = [older, otherAgent, newer, otherFile, 'legacy_worker-1_src_app.js'].map(t => `${t}.bak`);
+    assert.deepEqual(latestBackupsFor(entries, 'src/app.js', 'worker-1', root), [`${newer}.bak`, `${older}.bak`]);
+    assert.deepEqual(latestBackupsFor(entries, 'src/app.js', '', root), []);
+});

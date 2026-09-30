@@ -21,4 +21,27 @@ function backupFileMatches(token, file, projectRoot) {
     return identity ? identity === backupFileIdentity(file, projectRoot) : null;
 }
 
-module.exports = { backupOwner, createBackupToken, backupFileMatches };
+// Backups of the same file taken AFTER `token` — by any agent. Every MCP edit
+// backs up the file it is about to change, so a newer backup means the file
+// was edited again after the edit `token` belongs to.
+function newerBackupsFor(entries, token, file, projectRoot) {
+    const since = Number(String(token).split('_')[0]);
+    if (!Number.isFinite(since)) return [];
+    return entries
+        .filter(name => name.endsWith('.bak') && name !== `${token}.bak`)
+        .filter(name => Number(name.split('_')[0]) > since)
+        .filter(name => backupFileMatches(name.slice(0, -'.bak'.length), file, projectRoot) === true);
+}
+
+
+// Backups of `file` written by `agentId`, newest first. Only tokens whose file
+// identity verifies are returned; legacy tokens cannot be attributed safely.
+function latestBackupsFor(entries, file, agentId, projectRoot) {
+    const owner = `_${backupOwner(agentId)}_`;
+    return entries
+        .filter(name => name.endsWith('.bak') && name.includes(owner))
+        .filter(name => backupFileMatches(name.slice(0, -'.bak'.length), file, projectRoot) === true)
+        .sort((a, b) => Number(b.split('_')[0]) - Number(a.split('_')[0]));
+}
+
+module.exports = { backupOwner, createBackupToken, backupFileMatches, newerBackupsFor, latestBackupsFor };

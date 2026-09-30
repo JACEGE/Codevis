@@ -55,7 +55,7 @@ export default function useBulkTaskMove({ db, setTasks, optimisticUpdates }) {
         const taskIds = [...selectedTasks];
         const results = await Promise.allSettled(taskIds.map((taskId) => updateTask(
             taskId, { status: bulkTargetStatus },
-            `${BRIDGE_URL}/api/tasks/${taskId}/status?db=${encodeURIComponent(db)}`,
+            `${BRIDGE_URL}/api/tasks/${encodeURIComponent(taskId)}/status?db=${encodeURIComponent(db)}`,
             {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },

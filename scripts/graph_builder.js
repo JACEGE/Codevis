@@ -3641,6 +3641,75 @@ async function getDirectDependentFiles(session, changedPaths, availableFilesByPa
   return [...dependentPaths].sort().map(sourcePath => availableFilesByPath.get(sourcePath));
 }
 
+// An incremental build deletes and reparses every changed file and its direct
+// dependents. Code edges that point INTO those files from files that are not
+// reparsed (C imports B, B imports the changed A) would be lost with the
+// deleted target nodes, because only the reparsed files re-emit their edges.
+// Reparsing those sources as well would cascade through the whole import
+// graph, so save the incoming edges instead and re-attach them by uid.
+// Column names as written in the DDL, quoting included (`order` is reserved).
+const REL_PROP_NAMES = require('./ladybug_schema.cjs').REL_PROP_UNION
+  .map(decl => decl.trim().split(/\s+/)[0]);
+const bareRelProp = name => name.replace(/`/g, '');
+const REL_TYPE_NAMES = new Set(Object.keys(require('./ladybug_schema.cjs').REL_SPECS));
+
+async function backupIncomingCodeEdges(session, removedPaths) {
+  if (removedPaths.length === 0) return [];
+  const sourceDerived = PRESERVED_LABELS.map(label => `NOT s:${label}`).join(' AND ');
+  const result = await session.run(
+    `MATCH (s)-[r]->(t)
+     WHERE (t.file IN $paths OR (t:File AND t.path IN $paths))
+       AND coalesce(s.file, s.path) IS NOT NULL AND NOT coalesce(s.file, s.path) IN $paths
+       AND ${sourceDerived}
+     RETURN elementId(s) AS source, elementId(t) AS target, type(r) AS type,
+            ${REL_PROP_NAMES.map(name => `r.${name} AS p_${bareRelProp(name)}`).join(', ')}`,
+    { paths: removedPaths }
+  );
+  return result.records.map(record => ({
+    source: record.get('source'),
+    target: record.get('target'),
+    type: record.get('type'),
+    props: Object.fromEntries(REL_PROP_NAMES
+      .map(name => [name, record.get(`p_${bareRelProp(name)}`)])
+      .filter(([, value]) => value !== null && value !== undefined)),
+  }));
+}
+
+// One UNWIND per relationship type and property set, not one query per edge:
+// a hub file among the dependents has thousands of incoming edges, and every
+// query is a daemon round trip.
+async function restoreIncomingCodeEdges(session, edges) {
+  const groups = new Map();
+  for (const edge of edges) {
+    if (!REL_TYPE_NAMES.has(edge.type)) continue;
+    const names = Object.keys(edge.props).sort();
+    const key = `${edge.type}|${names.join(',')}`;
+    if (!groups.has(key)) groups.set(key, { type: edge.type, names, rows: [] });
+    const row = { source: edge.source, target: edge.target };
+    for (const name of names) row[`p_${bareRelProp(name)}`] = edge.props[name];
+    groups.get(key).rows.push(row);
+  }
+  let restored = 0;
+  const CHUNK = 500;
+  for (const { type, names, rows } of groups.values()) {
+    const setClause = names.length
+      ? ` ON CREATE SET ${names.map(name => `r.${name} = row.p_${bareRelProp(name)}`).join(', ')}`
+      : '';
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const result = await session.run(
+        `UNWIND $rows AS row
+         MATCH (s), (t) WHERE elementId(s) = row.source AND elementId(t) = row.target
+         MERGE (s)-[r:${type}]->(t)${setClause}
+         RETURN count(r) AS c`,
+        { rows: rows.slice(i, i + CHUNK) }
+      );
+      const count = result.records[0]?.get('c');
+      restored += count?.toNumber?.() ?? Number(count || 0);
+    }
+  }
+  return restored;
+}
+
 async function getDeletedFilePaths(session, allRelativePaths) {
   const result = await session.run(`MATCH (f:File) RETURN f.path AS path`);
   return result.records.map(r => r.get('path')).filter(p => p && !allRelativePaths.has(p));
@@ -4923,6 +4992,23 @@ async function extractImports(session, cached, tree, relativePath, allRelativePa
   }
 }
 
+// Group an unresolved import under the package it belongs to. Only a bare
+// package path is shortened (`lodash/fp` -> `lodash`); a scoped package keeps
+// its scope and name (`@scope/pkg`), and relative or absolute paths and quoted
+// headers stay whole. Cutting at the first `/` merged every unresolved `./x`
+// into one `.` module and every `@scope/*` package into `@scope`.
+function externalModuleName(moduleName, fromFile = null) {
+  const cleaned = moduleName.replace(/['"]/g, '');
+  // An unresolved relative import names a place, not a package: './utils'
+  // from two folders are two different modules. Anchor it at the importer.
+  if (fromFile && /^\.\.?\//.test(cleaned)) return path.posix.normalize(path.posix.join(path.posix.dirname(fromFile), cleaned));
+  if (cleaned.startsWith('.') || cleaned.startsWith('/')) return cleaned;
+  if (/\.(?:h|hh|hpp|hxx)$/.test(cleaned)) return cleaned;
+  const segments = cleaned.split('/');
+  if (cleaned.startsWith('@') && segments.length > 1) return segments.slice(0, 2).join('/');
+  return segments[0];
+}
+
 async function processImportSource(session, rawSource, relativePath, allRelativePaths) {
   const { resolved, isExternal, moduleName } = resolveImportPath(
     rawSource, relativePath, allRelativePaths
@@ -4935,7 +5021,7 @@ async function processImportSource(session, rawSource, relativePath, allRelative
       MERGE (f)-[:IMPORTS]->(target)
     `, { from: relativePath, to: resolved });
   } else if (isExternal && moduleName) {
-    const cleanModule = moduleName.replace(/['"]/g, '').split('/')[0];
+    const cleanModule = externalModuleName(moduleName, relativePath);
     await session.run(`
       MATCH (f:File {path: $from})
       MERGE (m:Module {name: $moduleName})
@@ -7592,6 +7678,7 @@ async function main() {
       for (const relativePath of rebuildPaths) {
         console.log(`Removing stale nodes for: ${relativePath}`);
       }
+      const incomingEdges = await backupIncomingCodeEdges(session, removedPaths);
       // One set-based sweep is substantially cheaper than scanning the entire
       // node table once for each changed/dependent file.
       await removeFileDerivedNodes(session, removedPaths);
@@ -7603,6 +7690,10 @@ async function main() {
 
         await insertDeferredEdges(session, deferredRenders, deferredPropsMap);
         await resolveGlobalCalls(session);
+        const reattached = await restoreIncomingCodeEdges(session, incomingEdges);
+        if (incomingEdges.length > 0) {
+          console.log(`Smart mode: re-attached ${reattached} of ${incomingEdges.length} incoming edge(s) from files that were not reparsed.`);
+        }
         await removeOrphanedSharedDerivedNodes(session);
         await assignMissingNodeIds(session);
         await assignIpv6Addresses(session, PROJECT_IDS[normalizeWorkspaceName(targetName)] || 1);
@@ -7703,7 +7794,8 @@ async function main() {
     // Only a completed build may discard it.
     if (fs.existsSync(journalPath)) {
       if (recoveryRestored) fs.unlinkSync(journalPath);
-      else console.warn(`[recovery] Some authored targets are unresolved; recovery journal retained at ${journalPath}`);
+      else console.warn(`[recovery] Some authored targets are unresolved; recovery journal retained at ${journalPath}. ` +
+        'Every build runs in full mode until the missing code is restored or the journal is archived (see docs/USER_WORKFLOW.md).');
     }
     console.log('Graph builder finished successfully.');
   } catch (error) {
@@ -7790,6 +7882,9 @@ module.exports = {
   // compiling and running them against real code catches that.
   __testing__: {
     assignIpv6Addresses,
+    externalModuleName,
+    backupIncomingCodeEdges,
+    restoreIncomingCodeEdges,
     getMtimeChangedFiles,
     backupFileLinks,
     getDirectDependentFiles,

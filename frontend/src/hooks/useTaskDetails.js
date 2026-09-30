@@ -68,7 +68,7 @@ export default function useTaskDetails({ db, setTasks, onError }) {
         setDetailLoading(true);
         try {
             const detail = await requestJson(
-                `${BRIDGE_URL}/api/tasks/${task.taskId}?db=${encodeURIComponent(db)}`,
+                `${BRIDGE_URL}/api/tasks/${encodeURIComponent(task.taskId)}?db=${encodeURIComponent(db)}`,
             );
             if (request === detailRequest.current) setTaskDetail(detail);
         } catch (error) {
@@ -109,7 +109,7 @@ export default function useTaskDetails({ db, setTasks, onError }) {
         setTaskSaveError(null);
         try {
             const saved = await requestJson(
-                `${BRIDGE_URL}/api/tasks/${taskDetail.taskId}?db=${encodeURIComponent(db)}`,
+                `${BRIDGE_URL}/api/tasks/${encodeURIComponent(taskDetail.taskId)}?db=${encodeURIComponent(db)}`,
                 {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
@@ -190,7 +190,7 @@ export default function useTaskDetails({ db, setTasks, onError }) {
         const request = detailRequest.current;
         try {
             await requestJson(
-                `${BRIDGE_URL}/api/tasks/${taskId}?db=${encodeURIComponent(db)}`,
+                `${BRIDGE_URL}/api/tasks/${encodeURIComponent(taskId)}?db=${encodeURIComponent(db)}`,
                 { method: 'DELETE' },
             );
             if (workspace !== workspaceRequest.current) return;
@@ -231,6 +231,6 @@ export default function useTaskDetails({ db, setTasks, onError }) {
 }
 
 function commentUrl(db, taskId, commentId) {
-    const suffix = commentId == null ? '' : `/${commentId}`;
-    return `${BRIDGE_URL}/api/tasks/${taskId}/comments${suffix}?db=${encodeURIComponent(db)}`;
+    const suffix = commentId == null ? '' : `/${encodeURIComponent(commentId)}`;
+    return `${BRIDGE_URL}/api/tasks/${encodeURIComponent(taskId)}/comments${suffix}?db=${encodeURIComponent(db)}`;
 }

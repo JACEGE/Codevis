@@ -220,7 +220,7 @@ function InspectorSidebar({
         setAnnotationError(null);
         setLoadingFullSource(false);
 
-        fetch(`${BRIDGE_URL}/api/node/detail?nodeId=${encodeURIComponent(debugNode)}&db=${db}`, { signal: ctrl.signal })
+        fetch(`${BRIDGE_URL}/api/node/detail?nodeId=${encodeURIComponent(debugNode)}&db=${encodeURIComponent(db)}`, { signal: ctrl.signal })
             .then(async res => {
                 if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
                 return res.json();
@@ -235,12 +235,12 @@ function InspectorSidebar({
         // Source is a separate request on purpose: it touches the filesystem and
         // a slow disk must not hold up the relationship lists, which are the
         // reason to open this panel at all.
-        fetch(`${BRIDGE_URL}/api/node/source?nodeId=${encodeURIComponent(debugNode)}&db=${db}`, { signal: ctrl.signal })
+        fetch(`${BRIDGE_URL}/api/node/source?nodeId=${encodeURIComponent(debugNode)}&db=${encodeURIComponent(db)}`, { signal: ctrl.signal })
             .then(res => (res.ok ? res.json() : null))
             .then(data => data && current() && setSource(data))
             .catch(() => { /* no source is a normal state — Task, Knowledge, deleted file */ });
 
-        fetch(`${BRIDGE_URL}/api/annotations?nodeId=${encodeURIComponent(debugNode)}&db=${db}`, { signal: ctrl.signal })
+        fetch(`${BRIDGE_URL}/api/annotations?nodeId=${encodeURIComponent(debugNode)}&db=${encodeURIComponent(db)}`, { signal: ctrl.signal })
             .then(async res => {
                 if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
                 return res.json();
@@ -281,7 +281,7 @@ function InspectorSidebar({
         setLoadingFullSource(true);
         setSourceError(null);
         try {
-            const res = await fetch(`${BRIDGE_URL}/api/node/source?nodeId=${encodeURIComponent(debugNode)}&db=${db}&full=1`);
+            const res = await fetch(`${BRIDGE_URL}/api/node/source?nodeId=${encodeURIComponent(debugNode)}&db=${encodeURIComponent(db)}&full=1`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
             if (request === nodeLifetime.current) setSource(data);

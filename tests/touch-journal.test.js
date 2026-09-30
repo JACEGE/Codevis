@@ -150,8 +150,46 @@ test('parallel subagents are credited to the task each of them claimed', async (
         { taskId: 'task-b', agentId: 'worker-b', file: 'b.js' },
         { taskId: 'task-a', agentId: 'worker-a', file: 'a.js' },
     ]);
+    // A refused completion keeps the claim: the agent still works on the task.
+    await hook({ agent_id: 'sa9', tool_name: 'mcp__codevis_graph__complete_task', tool_input: { taskId: 'task-a' }, tool_response: '{"status":"NOT_OWNER"}' });
+    await hook({ agent_id: 'sa1', tool_name: 'Edit', tool_input: { file_path: path.join(root, 'a.js'), new_string: 'const a = 1;' } });
+    assert.equal(journal.readJournal(root).length, 3);
     // Completing a task forgets the claim; later edits by that agent are not credited to it.
     await hook({ agent_id: 'sa1', tool_name: 'mcp__codevis_graph__complete_task', tool_input: { taskId: 'task-a' }, tool_response: '{"status":"OK"}' });
     await hook({ agent_id: 'sa1', tool_name: 'Edit', tool_input: { file_path: path.join(root, 'a.js'), new_string: 'const a = 1;' } });
-    assert.equal(journal.readJournal(root).length, 2);
+    assert.equal(journal.readJournal(root).length, 3);
+    // Completing with warnings (e.g. skipped docs) finishes the task as well.
+    await hook({ agent_id: 'sa2', tool_name: 'mcp__codevis_graph__complete_task', tool_input: { taskId: 'task-b' }, tool_response: { content: [{ type: 'text', text: '{"status":"OK_WITH_WARNINGS","skippedFiles":[]}' }] } });
+    await hook({ agent_id: 'sa2', tool_name: 'Edit', tool_input: { file_path: path.join(root, 'b.js'), new_string: 'const b = 1;' } });
+    assert.equal(journal.readJournal(root).length, 3, 'no edit is credited to a task completed with warnings');
+});
+
+test('journal cleanup does not drop entries appended concurrently by other agents', async () => {
+    const { spawn } = require('node:child_process');
+    const fsx = require('node:fs'), osx = require('node:os'), pathx = require('node:path');
+    const journal = require('../lib/touch-journal.cjs');
+    const dir = fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'codevis-journal-race-'));
+    const lib = require.resolve('../lib/touch-journal.cjs');
+    const PER_WRITER = 150;
+    try {
+        const writers = [1, 2, 3].map(n => new Promise((done, fail) => {
+            const child = spawn(process.execPath, ['-e', `
+                const j = require(${JSON.stringify(lib)});
+                for (let i = 0; i < ${PER_WRITER}; i++) j.appendJournal(${JSON.stringify(dir)}, { taskId: 'keep-${n}', file: 'a.js', i });
+            `], { stdio: 'inherit' });
+            child.on('exit', code => code === 0 ? done() : fail(new Error(`writer exited ${code}`)));
+        }));
+        let running = true;
+        Promise.all(writers).finally(() => { running = false; });
+        while (running) {
+            journal.appendJournal(dir, { taskId: 'drop', file: 'a.js' });
+            journal.removeJournalEntries(dir, 'drop');
+            await new Promise(r => setImmediate(r));
+        }
+        await Promise.all(writers);
+        const kept = journal.readJournal(dir).filter(e => String(e.taskId).startsWith('keep-'));
+        assert.equal(kept.length, 3 * PER_WRITER);
+    } finally {
+        fsx.rmSync(dir, { recursive: true, force: true });
+    }
 });

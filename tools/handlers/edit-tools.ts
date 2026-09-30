@@ -9,21 +9,42 @@ import { liveSyncFile } from "../lib/graph-sync.js";
 import { syncFileToGraph, checkAndResyncIfChanged } from "../lib/graph-sync.js";
 import { checkCrossLocks, ipv6SubnetPrefix } from "../lib/locks.js";
 import { logger } from "../lib/logger.js";
-import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, readdirSync } from "fs";
 import { resolve, dirname, extname, basename } from "path";
-import { fileURLToPath } from "url";
 import { createRequire } from "module";
 import { createHash, randomUUID } from "crypto";
 import { withScopeGuard, assertFileScope } from "../lib/scope-guard.js";
 import { lineAfterImports } from "../lib/insertion-position.js";
+import { dominantEol, withEol } from "../lib/line-endings.js";
+import { projectRoot } from "../lib/project-root.js";
 
 const { recordTouchedNodes } = createRequire(import.meta.url)("../lib/task-context.cjs");
-const { backupOwner, createBackupToken, backupFileMatches } = createRequire(import.meta.url)("../lib/edit-backups.cjs");
+const { backupOwner, createBackupToken, backupFileMatches, newerBackupsFor } = createRequire(import.meta.url)("../lib/edit-backups.cjs");
 const { resolvePhysicalPath, publishStagedFile } = createRequire(import.meta.url)("../../lib/file-publication.cjs");
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const PROJECT_ROOT = process.env.CODEVIS_PROJECT_DIR || resolve(__dirname, "../..");
+const PROJECT_ROOT = projectRoot();
+
+// Re-address the subnet children of a renamed or moved node. Ladybug only has
+// the 3-argument, 1-based substring(), so the new addresses are computed here
+// instead of in Cypher.
+async function cascadeIpv6Prefix(session: any, oldPrefix: string, newPrefix: string, targetFile?: string): Promise<number> {
+    const children = await session.run(
+        `MATCH (n) WHERE n.ipv6 STARTS WITH $oldPrefix
+           AND NOT (n:File OR n:Task OR n:Knowledge)
+         RETURN elementId(n) AS id, n.ipv6 AS ipv6`,
+        { oldPrefix }
+    );
+    for (const child of children.records) {
+        const ipv6 = newPrefix + String(child.get("ipv6")).slice(oldPrefix.length);
+        await session.run(
+            targetFile
+                ? `MATCH (n) WHERE elementId(n) = $id SET n.ipv6 = $ipv6, n.file = $targetFile`
+                : `MATCH (n) WHERE elementId(n) = $id SET n.ipv6 = $ipv6`,
+            { id: child.get("id"), ipv6, targetFile }
+        );
+    }
+    return children.records.length;
+}
 
 function createEditBackup(file: string, agentId: string, content: string): {
     backupDir: string;
@@ -346,7 +367,10 @@ const handlers: Record<string, ToolHandler> = {
                     // 2e. Splice new body
                     const before = fileContent.slice(0, target.startIndex);
                     const after = fileContent.slice(target.endIndex);
-                    const newContent = before + args.newBody + after;
+                    // The new body takes the endings of the body it replaces.
+                    const oldBody = fileContent.slice(target.startIndex, target.endIndex);
+                    const newBody = withEol(args.newBody, /\n/.test(oldBody) ? dominantEol(oldBody) : dominantEol(fileContent));
+                    const newContent = before + newBody + after;
 
                     // 2f. Syntax check
                     const checkTree = getParserInstance().parse(newContent);
@@ -577,7 +601,15 @@ const handlers: Record<string, ToolHandler> = {
                 }
 
                 // 3. Search oldString within the function's character range
+                // Agents send LF. Matching that verbatim in CRLF code missed every
+                // multi-line oldString: try it as sent, then in CRLF, and let the
+                // replacement follow whichever form matched.
                 const funcText = fileContent.slice(target.startIndex, target.endIndex);
+                if (funcText.indexOf(args.oldString) === -1 && funcText.includes("\r\n")
+                    && funcText.indexOf(withEol(args.oldString, "\r\n")) !== -1) {
+                    args.oldString = withEol(args.oldString, "\r\n");
+                    args.newString = withEol(args.newString, "\r\n");
+                }
                 const firstIdx = funcText.indexOf(args.oldString);
                 if (firstIdx === -1) {
                     logger.warn("edit_code_patch: CODE_NOT_FOUND", {
@@ -805,13 +837,22 @@ const handlers: Record<string, ToolHandler> = {
 
             const result = await withFileLock(absolutePath, async () => {
                 const fileContent = readFileSync(absolutePath, "utf-8");
-                const lines = fileContent.split("\n");
+                // Lines are counted on any line ending so the numbers agree
+                // with the parser's rows even in a file that mixes LF and CRLF.
+                // The code is spliced in at a character offset, so every other
+                // line keeps exactly the ending it had.
+                const lines = fileContent.split(/\r?\n/);
+                const lineStarts = [0];
+                for (const m of fileContent.matchAll(/\r?\n/g)) lineStarts.push(m.index! + m[0].length);
+                // A trailing newline leaves an empty last element. Appending after
+                // it produced "a\n\ncode" — a blank line and no final newline.
+                const endIndex = lines.length > 1 && lines[lines.length - 1] === "" ? lines.length - 1 : lines.length;
                 let insertIndex: number; // line index (0-based) to insert BEFORE
 
                 if (args.position === "end_of_file") {
-                    insertIndex = lines.length;
+                    insertIndex = endIndex;
                 } else if (args.position === "at_line") {
-                    insertIndex = Math.max(0, Math.min((args.atLine || 1) - 1, lines.length));
+                    insertIndex = Math.max(0, Math.min((args.atLine || 1) - 1, endIndex));
                 } else if (args.position === "after_imports") {
                     if (Object.hasOwn(EDIT_LANG_CONFIGS, ext)) {
                         const { lang } = await getLanguageAndQuery(ext);
@@ -852,9 +893,19 @@ const handlers: Record<string, ToolHandler> = {
                         insertIndex = args.position === "before_function"
                             ? target.startLine - 1
                             : target.endLine;
+                        // Keep a function's doc comment and decorators attached to
+                        // it: inserting at its first line split them apart.
+                        // A blank line ends the walk (a section comment above it
+                        // is not the function's), and so do a shebang and a
+                        // Python encoding line, which must stay first.
+                        const leading = ext === ".py" ? /^\s*(#|@)/ : /^\s*(\/\/|\/\*|\*|@)/;
+                        const pinned = /^\s*#!|^\s*#.*coding[:=]/;
+                        if (args.position === "before_function") {
+                            while (insertIndex > 0 && leading.test(lines[insertIndex - 1]) && !pinned.test(lines[insertIndex - 1])) insertIndex--;
+                        }
                     } finally { tree?.delete(); }
                 } else {
-                    insertIndex = lines.length;
+                    insertIndex = endIndex;
                 }
 
                 // Check if insert target line falls within a foreign-locked function
@@ -880,8 +931,15 @@ const handlers: Record<string, ToolHandler> = {
                     }
                 }
 
-                lines.splice(insertIndex, 0, args.code);
-                const newContent = lines.join("\n");
+                // The inserted code takes the ending of the line it follows (or
+                // the file's dominant one at the top).
+                const offset = insertIndex < lineStarts.length ? lineStarts[insertIndex] : fileContent.length;
+                const precedingEol = offset > 0 ? /\r?\n$/.exec(fileContent.slice(Math.max(0, offset - 2), offset))?.[0] : undefined;
+                const eol = precedingEol || dominantEol(fileContent);
+                const code = withEol(args.code, eol);
+                const newContent = offset >= fileContent.length && fileContent.length > 0 && !precedingEol
+                    ? fileContent + eol + code                              // no final newline: start a new line
+                    : fileContent.slice(0, offset) + code + eol + fileContent.slice(offset);
                 // An unsupported language may skip validation; a broken parser
                 // for a supported language must fail before changing the file.
                 if (Object.hasOwn(EDIT_LANG_CONFIGS, ext)) {
@@ -1055,6 +1113,17 @@ const handlers: Record<string, ToolHandler> = {
                         backupPath,
                     }) }], isError: true } as any;
                 }
+                // Restoring an older backup over a file that was edited again
+                // since silently discarded those later edits, including other
+                // agents' work. Refuse unless the caller insists.
+                const newer = newerBackupsFor(readdirSync(backupDir), args.backupToken, args.file, PROJECT_ROOT);
+                if (newer.length > 0 && args.force !== true) {
+                    return { content: [{ type: 'text', text: JSON.stringify({
+                        status: 'NEWER_EDITS',
+                        error: `'${args.file}' was edited ${newer.length} more time(s) after this backup. Rolling back would discard those edits; roll back the newest backup first or pass force: true.`,
+                        newerBackups: newer.map((name: string) => name.slice(0, -'.bak'.length)),
+                    }) }], isError: true } as any;
+                }
                 const backupContent = readFileSync(backupPath, "utf-8");
                 const temporary = `${absolutePath}.rollback_tmp.${randomUUID()}`;
                 try {
@@ -1205,9 +1274,21 @@ const handlers: Record<string, ToolHandler> = {
                 // accesses. Offsets from collectRenameOffsets are absolute in
                 // fileContent and all fall inside the declaration node.
                 const declEdits = collectRenameOffsets(target.node, args.oldName, true);
+                // Callers in the declaration's own file. The caller phase below
+                // skips this file, so without these edits `main()` kept calling
+                // the old name in the file that no longer defines it.
+                const sameFileCallers = [...new Set(callerFiles
+                    .filter(c => c.callerName && c.callerName !== args.oldName
+                        && resolvePhysicalPath(resolve(baseDir, c.file)) === absolutePath)
+                    .map(c => c.callerName))];
+                const callerEdits = sameFileCallers.flatMap(name => {
+                    const caller = findFunctionInAST(tree, funcQuery, name);
+                    return caller ? collectRenameOffsets(caller.node, args.oldName, false) : [];
+                });
+                const edits = [...new Map([...declEdits, ...callerEdits].map(e => [e.start, e])).values()];
                 let newContent: string;
                 if (declEdits.length > 0) {
-                    newContent = applyRenameOffsets(fileContent, declEdits, args.newName);
+                    newContent = applyRenameOffsets(fileContent, edits, args.newName);
                 } else {
                     // Fallback for exotic declaration forms the AST walk misses:
                     // scope the blind rename to the function's own text only.
@@ -1335,29 +1416,23 @@ const handlers: Record<string, ToolHandler> = {
                 newPrefix = newIpv6Groups.slice(0, 4).join(":") + ":";
             }
 
-            // Update the node itself
+            // Update the node itself — in place, identified by the node the
+            // pre-check selected. `uid` is the table's primary key and cannot be
+            // SET (Ladybug rejects it), and it is the node's elementId: keeping it
+            // is what preserves locks, Task and Knowledge links across a rename.
             await session.run(
-                `MATCH (n {name: $oldName, file: $file}) WHERE n:Function OR n:Class OR n:Component
+                `MATCH (n) WHERE elementId(n) = $uid
                  SET n.name = $newName,
-                     n.uid = $newUid,
-                     n.nodeId = $newUid,
                      n.ipv6 = $newIpv6,
                      n.renamedFrom = $oldName,
                      n.renamedAt = timestamp()`,
-                { oldName: args.oldName, file: args.file, newName: args.newName, newUid, newIpv6 }
+                { uid: rec.get("uid"), oldName: args.oldName, newName: args.newName, newIpv6 }
             );
 
             // Cascade IPv6 to subnet children (inner functions, effects, states)
             let cascadedCount = 0;
             if (oldPrefix && newPrefix && oldPrefix !== newPrefix) {
-                const childResult = await session.run(
-                    `MATCH (n) WHERE n.ipv6 STARTS WITH $oldPrefix
-                       AND NOT (n:File OR n:Task OR n:Knowledge)
-                     SET n.ipv6 = $newPrefix + substring(n.ipv6, $prefixLen)
-                     RETURN count(n) AS c`,
-                    { oldPrefix, newPrefix, prefixLen: oldPrefix.length }
-                );
-                cascadedCount = childResult.records[0]?.get("c")?.toNumber?.() ?? 0;
+                cascadedCount = await cascadeIpv6Prefix(session, oldPrefix, newPrefix);
             }
 
             // Re-sync line numbers after file edits
@@ -1466,7 +1541,27 @@ const handlers: Record<string, ToolHandler> = {
                 return { content: [{ type: "text", text: JSON.stringify({ status: "NAME_CONFLICT", error: `Function '${args.functionName}' already exists in targetFile '${args.targetFile}'.` }) }], isError: true } as any;
             }
 
-            // 1d. Warn about private dependencies in sourceFile
+            // 1d. Callers that stay behind in sourceFile. Nothing adds an import
+            // back into the source file, so moving would leave them calling an
+            // unbound name. Refuse before any write unless the caller opts in
+            // and fixes the source file itself.
+            const sourceCallersResult = await session.run(
+                `MATCH (caller)-[:CALLS]->(n) WHERE elementId(n) = $uid
+                   AND caller.file = $sourceFile AND elementId(caller) <> $uid
+                 RETURN DISTINCT caller.name AS callerName`,
+                { uid: rec.get("uid"), sourceFile: args.sourceFile }
+            );
+            const sourceCallers = sourceCallersResult.records.map((r: any) => r.get("callerName") as string);
+            if (sourceCallers.length > 0 && args.allowSourceCallers !== true) {
+                return { content: [{ type: "text", text: JSON.stringify({
+                    status: "SOURCE_CALLERS",
+                    error: `'${args.functionName}' is still called in '${args.sourceFile}' by ${sourceCallers.join(", ")}. ` +
+                        "Moving it would leave those calls unresolved: move the callers too, or pass allowSourceCallers: true and add the import yourself.",
+                    sourceCallers,
+                }) }], isError: true } as any;
+            }
+
+            // 1e. Warn about private dependencies in sourceFile
             const privateDepsResult = await session.run(
                 `MATCH (n {name: $name, file: $sourceFile})-[:CALLS]->(dep {file: $sourceFile})
                  WHERE NOT (dep)<-[:CONTAINS]-(:File)-[:IMPORTS]->(:File)
@@ -1655,40 +1750,36 @@ const handlers: Record<string, ToolHandler> = {
                 newChildPrefix = newIpv6Groups.slice(0, 4).join(":") + ":";
             }
 
-            // Update node: change file, uid, ipv6
+            // Update node in place: change file and ipv6, keep uid (primary key
+            // and elementId; see rename_function).
+            const movedUid = rec.get("uid");
             await session.run(
-                `MATCH (n {name: $name, file: $sourceFile}) WHERE n:Function OR n:Class OR n:Component
+                `MATCH (n) WHERE elementId(n) = $uid
                  SET n.file = $targetFile,
-                     n.uid = $newUid,
-                     n.nodeId = $newUid,
                      n.ipv6 = $newIpv6,
                      n.movedFrom = $sourceFile,
                      n.movedAt = timestamp()`,
-                { name: args.functionName, sourceFile: args.sourceFile, targetFile: args.targetFile, newUid, newIpv6 }
+                { uid: movedUid, sourceFile: args.sourceFile, targetFile: args.targetFile, newIpv6 }
             );
 
             // Migrate CONTAINS edge: oldFile → newFile
             await session.run(
-                `MATCH (oldFile:File {path: $sourceFile})-[r:CONTAINS]->(n {name: $name, file: $targetFile})
-                 DELETE r
-                 WITH n
+                `MATCH (oldFile:File {path: $sourceFile})-[r:CONTAINS]->(n)
+                 WHERE elementId(n) = $uid
+                 DELETE r`,
+                { sourceFile: args.sourceFile, uid: movedUid }
+            );
+            await session.run(
+                `MATCH (n) WHERE elementId(n) = $uid
                  MERGE (newFile:File {path: $targetFile})
                  MERGE (newFile)-[:CONTAINS]->(n)`,
-                { sourceFile: args.sourceFile, targetFile: args.targetFile, name: args.functionName }
+                { targetFile: args.targetFile, uid: movedUid }
             );
 
             // Cascade file+IPv6 to subnet children (inner functions, effects, states)
             let cascadedCount = 0;
             if (oldChildPrefix && newChildPrefix && oldChildPrefix !== newChildPrefix) {
-                const childResult = await session.run(
-                    `MATCH (n) WHERE n.ipv6 STARTS WITH $oldPrefix
-                       AND NOT (n:File OR n:Task OR n:Knowledge)
-                     SET n.file = $targetFile,
-                         n.ipv6 = $newPrefix + substring(n.ipv6, $prefixLen)
-                     RETURN count(n) AS c`,
-                    { oldPrefix: oldChildPrefix, newPrefix: newChildPrefix, prefixLen: oldChildPrefix.length, targetFile: args.targetFile }
-                );
-                cascadedCount = childResult.records[0]?.get("c")?.toNumber?.() ?? 0;
+                cascadedCount = await cascadeIpv6Prefix(session, oldChildPrefix, newChildPrefix, args.targetFile);
             }
 
             // Re-sync both files
@@ -1887,6 +1978,12 @@ Object.assign(handlers, {
                         }
 
                         const funcText = working.slice(target.startIndex, target.endIndex);
+                        // Same rule as edit_code_patch: as sent first, then CRLF.
+                        if (funcText.indexOf(edit.oldString) === -1 && funcText.includes("\r\n")
+                            && funcText.indexOf(withEol(edit.oldString, "\r\n")) !== -1) {
+                            edit.oldString = withEol(edit.oldString, "\r\n");
+                            edit.newString = withEol(edit.newString, "\r\n");
+                        }
                         const matchIdx = funcText.indexOf(edit.oldString);
                         if (matchIdx === -1) {
                             stagingErrors.push({ file: edit.file, functionName: edit.functionName, error: `oldString not found in '${edit.functionName}'.` });
@@ -2198,6 +2295,7 @@ const definitions = [
             type: "object",
             properties: {
                 backupToken: { type: "string", description: "The backupToken returned by edit_function." },
+                force: { type: "boolean", description: "Roll back even though the file was edited again after this backup (those later edits are lost)." },
                 file: { type: "string", description: "Relative file path (must match the original edit)." },
                 agentId: { type: "string", description: "Agent ID performing the rollback." },
             },
@@ -2244,6 +2342,7 @@ const definitions = [
                 functionName: { type: "string", description: "Name of the function to move." },
                 agentId: { type: "string", description: "Agent ID. Must hold the lock on functionName in sourceFile when locking is enabled." },
                 updateImports: { type: "boolean", description: "If true (default), update import statements in all dependent files." },
+                allowSourceCallers: { type: "boolean", description: "Move even though functions left in sourceFile still call it. The source file then needs an import added by the caller." },
                 db: { type: "string", description: "Database: 'project_db' (current repository) or 'codevis_db' (CodeVis self-graph).", enum: ["project_db", "codevis_db"] }
             },
             required: ["sourceFile", "targetFile", "functionName", "agentId"]

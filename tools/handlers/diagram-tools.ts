@@ -4,6 +4,7 @@ import { resolve, dirname } from "path";
 import { writeFileSync, mkdirSync } from "fs";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
+import { projectRoot } from "../lib/project-root.js";
 
 // All diagram logic lives in scripts/diagram/ (single source of truth, shared
 // with the bridge). These handlers are thin MCP wrappers: call the shared
@@ -12,7 +13,7 @@ const require = createRequire(import.meta.url);
 const __dirname_diagram = dirname(fileURLToPath(import.meta.url));
 const classDiagram = require(resolve(__dirname_diagram, "../../scripts/diagram/class_diagram.cjs"));
 
-const DIAGRAM_PROJECT_ROOT = process.env.CODEVIS_PROJECT_DIR || resolve(__dirname_diagram, "../..");
+const DIAGRAM_PROJECT_ROOT = projectRoot();
 
 const ok = mcpOk;
 const err = mcpErr;

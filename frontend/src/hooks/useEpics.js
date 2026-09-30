@@ -58,7 +58,7 @@ export default function useEpics({ db }) {
         setEpicDetailLoading(true);
         try {
             const detail = await requestJson(
-                `${BRIDGE_URL}/api/epics/${epicId}?db=${encodeURIComponent(db)}`,
+                `${BRIDGE_URL}/api/epics/${encodeURIComponent(epicId)}?db=${encodeURIComponent(db)}`,
             );
             if (workspace === lifetime.current && request === detailRequest.current) updateEpicDetail(detail);
         } catch (error) {
@@ -88,7 +88,7 @@ export default function useEpics({ db }) {
         setEpicSaveError(null);
         try {
             await requestJson(
-                `${BRIDGE_URL}/api/epics/${epicDetail.epicId}?db=${encodeURIComponent(db)}`,
+                `${BRIDGE_URL}/api/epics/${encodeURIComponent(epicDetail.epicId)}?db=${encodeURIComponent(db)}`,
                 {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },

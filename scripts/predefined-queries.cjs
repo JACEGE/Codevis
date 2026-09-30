@@ -199,9 +199,9 @@ const PREDEFINED_QUERIES = [
     {
         name: "execution_path_for_event",
         description: "Get the full execution path for a specific UserEvent (replace EVENT_UID_HERE). Shows each step in order.",
-        // `order` ist ein reserviertes Wort und muss in Backticks stehen,
-        // sonst ist die ganze Abfrage ein Parser-Fehler.
-        query: "MATCH (evt:UserEvent {uid: 'EVENT_UID_HERE'})-[step:EXECUTION_STEP]->(fn:Function) RETURN step.`order` AS stepOrder, fn.name AS function, fn.file AS file, fn.uid AS uid ORDER BY stepOrder"
+        // Die Schrittnummer heißt im Schema `stepOrder` (EXECUTION_STEP.renamedProps):
+        // `order` ist ein reserviertes Wort, und die Spalte war immer leer.
+        query: "MATCH (evt:UserEvent {uid: 'EVENT_UID_HERE'})-[step:EXECUTION_STEP]->(fn:Function) RETURN step.stepOrder AS stepOrder, fn.name AS function, fn.file AS file, fn.uid AS uid ORDER BY stepOrder"
     },
     {
         name: "click_to_state_changes",

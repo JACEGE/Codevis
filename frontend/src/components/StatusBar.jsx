@@ -77,7 +77,7 @@ function StatusBar({ force2d = false, capped = null, db: dbProp, socket, connect
         }
 
         // Initial lock count fetch
-        fetch(`${BRIDGE_URL}/api/locks?db=${db}`)
+        fetch(`${BRIDGE_URL}/api/locks?db=${encodeURIComponent(db)}`)
             .then(r => r.ok ? r.json() : null)
             .then(data => {
                 if (live && data && Array.isArray(data)) setLockCount(data.length);

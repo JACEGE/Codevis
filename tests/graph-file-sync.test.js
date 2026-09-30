@@ -76,3 +76,17 @@ test('call batches retain relationships beyond the chunk boundary', async t => {
     await syncGraphFile(session, snapshot([fn('targetD',targets),fn('helper')]));
     assert.deepEqual(await calls(session), [['callerB','targetD'],['targetD','helper']]);
 });
+
+test('bringing an old name back after an in-place rename does not overwrite the renamed function', async t => {
+    const db = await openTestDb();
+    t.after(db.cleanup);
+    await syncGraphFile(db.session, snapshot([fn('work')]));
+    // rename_function keeps the node and its uid (the primary key); only the name changes.
+    await db.session.run("MATCH (f:Function {name:'work', file:'c.js'}) SET f.name = 'renamed'");
+    const renamedId = (await db.session.run("MATCH (f:Function {name:'renamed'}) RETURN elementId(f) AS id")).records[0].get('id');
+    await syncGraphFile(db.session, snapshot([fn('renamed'), fn('work')], { mtime: 200 }));
+    const rows = await db.session.run("MATCH (f:Function {file:'c.js'}) RETURN f.name AS name, elementId(f) AS id ORDER BY name");
+    assert.deepEqual(rows.records.map(r => r.get('name')), ['renamed', 'work']);
+    assert.equal(rows.records[0].get('id'), renamedId, 'the renamed node keeps its identity');
+    assert.notEqual(rows.records[1].get('id'), renamedId);
+});

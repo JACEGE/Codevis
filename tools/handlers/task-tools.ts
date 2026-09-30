@@ -11,9 +11,9 @@ import { commitSyncWave, commitSyncFileDetailed } from "../lib/graph-sync.js";
 import type { FileSyncOutcome } from "../lib/graph-sync.js";
 import { syncLockManifest, syncFileToGraphDetailed } from "../lib/graph-sync.js";
 import { transitionLocks, lockTtlMs } from "../lib/locks.js";
-import { resolve, extname, dirname } from "path";
+import { resolve, extname } from "path";
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
-import { fileURLToPath } from "url";
+import { projectRoot } from "../lib/project-root.js";
 
 /**
  * Raw Edit/Write changes the touch-recorder hook journaled for this task. Their
@@ -68,9 +68,7 @@ async function syncTaskFiles(
     return { synced, results, skippedFiles, failedFiles };
 }
 
-const __filename_task = fileURLToPath(import.meta.url);
-const __dirname_task = dirname(__filename_task);
-const TASK_PROJECT_ROOT = process.env.CODEVIS_PROJECT_DIR || resolve(__dirname_task, "../..");
+const TASK_PROJECT_ROOT = projectRoot();
 
 // ── Wave → Workflow script generation ────────────────────────────────────────
 // plan_task_waves computes a dependency-ordered plan; with emitWorkflow it also
@@ -690,7 +688,7 @@ const handlers: Record<string, ToolHandler> = {
                 // as warnings and never turn completion into an error, because
                 // agents treat errors as "retry" and would loop forever on
                 // files that cannot be synchronized (docs, deleted files, ...).
-                const projectDir = process.env.CODEVIS_PROJECT_DIR || process.cwd();
+                const projectDir = projectRoot();
                 const affectedFiles = withJournalFiles(await getSyncFiles(session, { taskId: args.taskId }), projectDir, args.taskId);
                 const sync = await syncTaskFiles(affectedFiles, projectDir, (absolutePath, file, ext) =>
                     syncFileToGraphDetailed(absolutePath, file, ext, driver));
@@ -811,21 +809,22 @@ const handlers: Record<string, ToolHandler> = {
             const taskResult = await session.run(
                 `MATCH (t:Task)
                  WHERE t.status IN ['todo', 'backlog']
+                   AND NOT (t.status = 'backlog' AND t.wave IS NOT NULL AND coalesce(t.waveStatus, '') <> 'active')
                    AND ($epicId IS NULL OR EXISTS { MATCH (e:Epic {taskId: $epicId})-[:FULFILLED_BY]->(t) })
-                   AND ($epicId IS NULL OR NOT EXISTS {
+                   AND NOT EXISTS {
                        MATCH (pre:Task)-[:DEPENDS_ON]->(t)
                        WHERE NOT (pre.status IN ['review', 'done'])
-                   })
-                   AND ($epicId IS NULL OR NOT EXISTS {
+                   }
+                   AND NOT EXISTS {
                        MATCH (pre2:Task)-[:DEPENDS_ON]->(:Task)-[:DEPENDS_ON]->(t)
                        WHERE pre2.status <> 'done'
-                   })
+                   }
                  RETURN t.taskId AS taskId, t.title AS title, t.description AS description, t.priority AS priority, t.workInstructions AS workInstructions
                  ORDER BY CASE t.status WHEN 'todo' THEN 0 WHEN 'backlog' THEN 1 ELSE 2 END,
                  CASE t.priority
                    WHEN 'critical' THEN 0 WHEN 'high' THEN 1
                    WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END
-                 LIMIT 1`,
+                 LIMIT 10`,
                 { epicId: args.epicId || null }
             );
 
@@ -834,8 +833,17 @@ const handlers: Record<string, ToolHandler> = {
                     ? { status: "EPIC_DONE", epicId: args.epicId, message: "No runnable tasks remain in this epic." }
                     : { status: "NO_TASKS", message: "No todo tasks available." };
             } else {
-                const taskId = taskResult.records[0].get("taskId");
-                return handlers.claim_task({ ...args, taskId }, ctx);
+                // Try the candidates in order. With only the top one, a task that
+                // another worker had just claimed, or whose scope conflicted, was
+                // returned on every call and nothing else was ever offered.
+                let last: any;
+                for (const record of taskResult.records) {
+                    last = await handlers.claim_task!({ ...args, taskId: record.get("taskId") }, ctx);
+                    let claimStatus: string | undefined;
+                    try { claimStatus = JSON.parse(last.content[0].text).status; } catch { claimStatus = undefined; }
+                    if (!["ALREADY_CLAIMED", "LOCK_CONFLICT", "WAVE_INACTIVE"].includes(claimStatus ?? "")) return last;
+                }
+                return last;
             }
 
             // Sync lock manifest after task ops that change locks
@@ -1096,7 +1104,7 @@ Object.assign(handlers, {
 
             const task = await session.run('MATCH (t:Task {taskId:$taskId}) RETURN t.taskId AS taskId', { taskId: args.taskId });
             if (!task.records.length) return { content: [{ type: 'text', text: JSON.stringify({ status: 'NOT_FOUND', taskId: args.taskId }) }], isError: true };
-            const projectDir = process.env.CODEVIS_PROJECT_DIR || process.cwd();
+            const projectDir = projectRoot();
             const affectedFiles = withJournalFiles(await getSyncFiles(session, { taskId: args.taskId }), projectDir, args.taskId);
             const sync = await syncTaskFiles(affectedFiles, projectDir, (absolutePath, file, ext) =>
                 commitSyncFileDetailed(absolutePath, file, ext, driver, args.taskId));
@@ -1329,12 +1337,14 @@ Object.assign(handlers, {
              e.workInstructions=COALESCE($workInstructions,e.workInstructions),
              e.priority=COALESCE($priority,e.priority), e.updatedAt=timestamp(), e.updatedBy=$updatedBy
              RETURN e.taskId AS epicId, e.title AS title, e.description AS description,
-                    e.workInstructions AS workInstructions, e.priority AS priority, e.status AS status`,
+                    e.workInstructions AS workInstructions, e.priority AS priority, e.status AS epicStatus`,
             { epicId: args.epicId, title: args.title ?? null, description: args.description ?? null,
               workInstructions: args.workInstructions ?? null, priority: args.priority ?? null, updatedBy: ctx.defaultAgentId || "agent" });
         if (!result.records.length) return { content: [{ type: "text", text: `Epic ${args.epicId} not found` }], isError: true } as any;
+        // The epic's own status used to be returned as `status`, overwriting the
+        // call's "OK", so a successful update read as `"status":"backlog"`.
         const r = result.records[0], out: any = {}; r.keys.forEach((k: string) => { out[k] = r.get(k); });
-        return { content: [{ type: "text", text: JSON.stringify({ status: "OK", ...out }, null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify({ ...out, status: "OK" }, null, 2) }] };
     }),
 
     add_task_to_epic: async (args: any, ctx: any) => withTaskSession(args, ctx, async (session) => {

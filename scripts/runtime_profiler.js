@@ -254,7 +254,7 @@ async function saveUserEvent(driver, eventData) {
                     `
                     MATCH (evt:UserEvent {uid: $eventUid})
                     MERGE (fn:Function {name: $funcName})
-                    MERGE (evt)-[:EXECUTION_STEP {order: $order}]->(fn)
+                    MERGE (evt)-[:EXECUTION_STEP {stepOrder: $order}]->(fn)
                     `,
                     { eventUid, funcName: step.name, order: ladybug.int(i) }
                 )

@@ -30,7 +30,8 @@ const config = paths.loadConfig();
 const { isLockingEnabled, lockingStatus } = require('../lib/locking-config.cjs');
 const LOCKING_ENABLED = isLockingEnabled(config);
 const specDb = require('../scripts/spec/spec_db.cjs');
-const { saveSpecSource } = require('./spec-save.cjs');
+const { saveSpecSource, firstContainedSpecFile } = require('./spec-save.cjs');
+const { latestBackupsFor } = require('../tools/lib/edit-backups.cjs');
 const classDiagram = require('../scripts/diagram/class_diagram.cjs');
 const { resolveExtractors } = require('../scripts/extractors.cjs');
 const rosDb = require('../scripts/ros/ros_db.cjs');
@@ -221,6 +222,21 @@ require('./node-search.cjs').registerNodeSearch(app, {
     getActiveDb: () => activeDb,
     getDriver: key => drivers[key] || (drivers[key] = createDriver(key)),
 });
+
+// Graph reads name their workspace per request. An unknown or unconfigured name
+// used to fall back to the active database, so a typo quietly answered from the
+// wrong graph. Resolve through the alias table and report instead.
+function resolveRequestDriver(requested) {
+    let key;
+    try {
+        key = normalizeWorkspaceName(requested, activeDb);
+    } catch (error) {
+        return { error: error.message };
+    }
+    const d = drivers[key];
+    if (!d) return { error: `Workspace '${requested}' is not configured.` };
+    return { key, driver: d };
+}
 
 function getTaskDriver(dbKey) {
     const key = normalizeWorkspaceName(dbKey, activeDb);
@@ -1360,12 +1376,13 @@ async function runStaleLockCleanup() {
                 `MATCH (n) WHERE n.editInProgress = true
                    AND n.editInProgressSince IS NOT NULL
                    AND n.editInProgressSince < (timestamp() - $ttl)
-                 RETURN n.name AS name, n.file AS file, n.lockedBy AS lockedBy,
+                 RETURN elementId(n) AS id, n.name AS name, n.file AS file, n.lockedBy AS lockedBy,
                         n.editInProgressSince AS since`,
                 { ttl: STALE_EDIT_TTL_MS }
             );
 
             for (const rec of staleEditsResult.records) {
+                const nodeId = rec.get('id');
                 const nodeName = rec.get('name');
                 const nodeFile = rec.get('file');
                 const lockedBy = rec.get('lockedBy');
@@ -1376,35 +1393,29 @@ async function runStaleLockCleanup() {
                 staleAgents.add(lockedBy);
                 results.staleEdits++;
 
-                // Attempt file rollback from latest backup for this file + agent
+                // Attempt file rollback from latest backup for this file + agent.
+                // Backups are written by the edit tools under their own project
+                // root and named with hashes of agent and file (edit-backups.cjs),
+                // so both the directory and the matching must follow that writer.
                 let recovered = false;
-                if (nodeFile) {
+                if (nodeFile && lockedBy) {
                     try {
                         const fs = require('fs');
-                        const backupDir = path.resolve(__dirname, '..', '.claude', 'backups');
-                        if (fs.existsSync(backupDir)) {
-                            const escapedFile = nodeFile.replace(/[^a-zA-Z0-9._-]/g, '_');
-                            // Find most recent backup for this agent + file
-                            const allBackups = fs.readdirSync(backupDir)
-                                .filter(f => f.endsWith('.bak') && f.includes(lockedBy || '') && f.includes(escapedFile))
-                                .sort()
-                                .reverse();
-
-                            if (allBackups.length > 0) {
-                                const backupPath = path.join(backupDir, allBackups[0]);
-                                const absoluteFilePath = path.resolve(PROJECT_ROOT, nodeFile);
-                                // Defense-in-depth: nodeFile comes from the graph
-                                // (parser output), not a trusted constant. Refuse
-                                // to write outside the project — a stray '../…'
-                                // path must not let stale-lock recovery clobber an
-                                // arbitrary file on disk.
-                                const normFile = absoluteFilePath.replace(/\\/g, '/');
-                                const normRoot = path.resolve(PROJECT_ROOT).replace(/\\/g, '/');
-                                if (normFile !== normRoot && !normFile.startsWith(normRoot + '/')) {
-                                    console.warn(`[recovery] SKIP: node file '${nodeFile}' resolves outside the project root — not restoring`);
-                                    continue;
-                                }
-                                const backupContent = fs.readFileSync(backupPath, 'utf-8');
+                        const editRoot = PROJECT_ROOT;
+                        const backupDir = path.join(editRoot, '.claude', 'backups');
+                        const absoluteFilePath = path.resolve(editRoot, nodeFile);
+                        // Defense-in-depth: nodeFile comes from the graph
+                        // (parser output), not a trusted constant. Refuse
+                        // to write outside the project — a stray '../…'
+                        // path must not let stale-lock recovery clobber an
+                        // arbitrary file on disk.
+                        const relative = path.relative(editRoot, absoluteFilePath);
+                        if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+                            console.warn(`[recovery] SKIP: node file '${nodeFile}' resolves outside the project root — not restoring`);
+                        } else if (fs.existsSync(backupDir)) {
+                            const [latest] = latestBackupsFor(fs.readdirSync(backupDir), nodeFile, lockedBy, editRoot);
+                            if (latest) {
+                                const backupContent = fs.readFileSync(path.join(backupDir, latest), 'utf-8');
 
                                 // Write atomically
                                 const tmpPath = absoluteFilePath + '.cleanup_tmp';
@@ -1412,7 +1423,7 @@ async function runStaleLockCleanup() {
                                 fs.renameSync(tmpPath, absoluteFilePath);
                                 recovered = true;
                                 results.recovered++;
-                                console.log(`[recovery] Agent ${lockedBy} crashed with edit on node '${nodeName}' — backup restored from ${allBackups[0]}, lock released`);
+                                console.log(`[recovery] Agent ${lockedBy} crashed with edit on node '${nodeName}' — backup restored from ${latest}, lock released`);
                             }
                         }
                     } catch (recoveryErr) {
@@ -1422,9 +1433,9 @@ async function runStaleLockCleanup() {
 
                 // Reset the editInProgress flag regardless of recovery success
                 await session.run(
-                    `MATCH (n {name: $name, file: $file})
+                    `MATCH (n) WHERE elementId(n) = $id
                      SET n.editInProgress = null, n.editInProgressSince = null`,
-                    { name: nodeName, file: nodeFile }
+                    { id: nodeId }
                 );
 
                 // If agent's task is in_progress, flag it as needs_info
@@ -1603,8 +1614,9 @@ app.post('/api/graph/scope', async (req, res) => {
 // last-parsed timestamp, and which optional extractors are active.
 // Read-only: no writes happen here, the query only aggregates existing data.
 app.get('/api/graph/stats', async (req, res) => {
-    const dbKey = req.query.db || activeDb;
-    const d = drivers[dbKey] || driver;
+    const selected = resolveRequestDriver(req.query.db);
+    if (selected.error) return res.status(400).json({ error: selected.error });
+    const { key: dbKey, driver: d } = selected;
     const session = d.session();
     try {
         // Node counts per label — UNWIND labels so multi-label nodes are counted once per label.
@@ -1700,8 +1712,9 @@ app.post('/api/graph/query', async (req, res) => {
         });
     }
 
-    const dbKey = reqDb || activeDb;
-    const d = drivers[dbKey] || driver;
+    const selected = resolveRequestDriver(reqDb);
+    if (selected.error) return res.status(400).json({ error: selected.error });
+    const d = selected.driver;
     try {
         res.json(await executeExploreQuery(d, query));
     } catch (err) {
@@ -1825,8 +1838,9 @@ app.post('/api/graph/subgraph', async (req, res) => {
         : 0;
 
     const uniqueIpv6s = [...new Set(rawIpv6s.map((value) => value.trim()))];
-    const dbKey = req.body?.db || activeDb;
-    const d = drivers[dbKey] || driver;
+    const selected = resolveRequestDriver(req.body?.db);
+    if (selected.error) return res.status(400).json({ error: selected.error });
+    const d = selected.driver;
     const session = d.session();
 
     try {
@@ -2368,8 +2382,7 @@ async function specDetail(session, node) {
     };
 }
 
-async function nodeDetail(dbKey, nodeId) {
-    const d = drivers[dbKey] || driver;
+async function nodeDetail(d, nodeId) {
     const session = d.session();
     try {
         // Keyed by uid. `id(n) = $nodeId` matched up to 500 nodes and returned
@@ -2544,7 +2557,9 @@ app.get('/api/node/detail', async (req, res) => {
         if (!nodeId) {
             return res.status(400).json({ error: 'nodeId query param required' });
         }
-        const detail = await nodeDetail(req.query.db || activeDb, nodeId);
+        const selected = resolveRequestDriver(req.query.db);
+        if (selected.error) return res.status(400).json({ error: selected.error });
+        const detail = await nodeDetail(selected.driver, nodeId);
         if (!detail) return res.status(404).json({ error: `No node with id ${nodeId}` });
         res.json(detail);
     } catch (err) {
@@ -2572,8 +2587,9 @@ app.get('/api/node/source', async (req, res) => {
         }
         const context = Math.min(20, Math.max(0, parseInt(req.query.context, 10) || 0));
         const fullFile = req.query.full === '1' || req.query.full === 'true';
-        const dbKey = req.query.db || activeDb;
-        const d = drivers[dbKey] || driver;
+        const selected = resolveRequestDriver(req.query.db);
+        if (selected.error) return res.status(400).json({ error: selected.error });
+        const d = selected.driver;
         const session = d.session();
         let file, startLine, endLine, snippet;
         try {
@@ -2864,8 +2880,11 @@ function runHeadlessBraindump({ text, sessionId, chat_id, runId, db = 'meta' }) 
     // 'meta' | 'tool'. Worker, session bookkeeping and result query all use the
     // same DB so the generated subgraph is found where it was written.
     const mcpDb = db === 'meta' ? 'meta' : 'tool';
+    // The prompt goes last, behind `--`: as an ordinary argument, a braindump
+    // that starts with `-` ("- fix X", a Markdown list) was parsed as an
+    // unknown CLI option and the worker never ran.
     const args = [
-        '-p', text,
+        '-p',
         '--output-format', 'json',
         '--model', BRAIN_MODEL,
         '--strict-mcp-config',
@@ -2876,6 +2895,7 @@ function runHeadlessBraindump({ text, sessionId, chat_id, runId, db = 'meta' }) 
         // also kann der Worker keine fremden/gefaehrlichen Tools aufrufen.
         '--permission-mode', 'acceptEdits',
         '--allowedTools', 'mcp__codevis_graph',
+        '--', text,
     ];
     console.log(`[Brain] spawning headless worker (session ${sessionId}, chat_id ${chat_id}, model ${BRAIN_MODEL})`);
     const child = spawnHeadlessWorker(args, { cwd: BRAIN_CWD, env: process.env, label: `brain ${sessionId}` });
@@ -3086,7 +3106,7 @@ function runHeadlessSpecBuild({ diagram, instructions, specId, chat_id, db }) {
     const mcpDb = db === 'meta' ? 'meta' : 'tool';
     const userMsg = `specId: ${specId}\ndb: ${mcpDb}\n\n=== DIAGRAM ===\n${diagram}\n\n=== INSTRUCTIONS ===\n${(instructions && instructions.trim()) || '(none)'}`;
     const args = [
-        '-p', userMsg,
+        '-p',
         '--output-format', 'json',
         '--model', BRAIN_MODEL,
         '--strict-mcp-config',
@@ -3094,6 +3114,7 @@ function runHeadlessSpecBuild({ diagram, instructions, specId, chat_id, db }) {
         '--append-system-prompt', SPEC_SYSTEM_PROMPT,
         '--permission-mode', 'acceptEdits',
         '--allowedTools', 'mcp__codevis_graph',
+        '--', userMsg,
     ];
     console.log(`[Spec] spawning headless build worker (specId ${specId}, model ${BRAIN_MODEL})`);
     const child = spawnHeadlessWorker(args, { cwd: BRAIN_CWD, env: process.env, label: `spec ${specId}` });
@@ -3210,11 +3231,7 @@ function resolveSpecFile(sourceFile, wsKey) {
         ...(Array.isArray(ws.sourceDir) ? ws.sourceDir : (ws.sourceDir ? [ws.sourceDir] : [])),
         paths.PROJECT_ROOT,
     ].filter(Boolean);
-    for (const root of roots) {
-        const candidate = pathLib.resolve(root, sourceFile);
-        if (fs.existsSync(candidate)) return candidate;
-    }
-    return null;
+    return firstContainedSpecFile(roots, sourceFile);
 }
 
 /**
@@ -3240,14 +3257,13 @@ async function resolveSpecFileVia(session, sourceFile, wsKey) {
     for (const r of records) {
         const segs = String(r.get('path')).split(/[\\/]/);
         for (let i = 1; i <= Math.min(3, segs.length - 1); i++) {
+            // Ein reines `..` (oder `.`) wäre ein Vorfahr des Projekts und damit
+            // keine Projektwurzel — darunter läge jede Nachbardatei.
+            if (segs[i - 1] === '..' || segs[i - 1] === '.' || segs[i - 1] === '') continue;
             roots.add(pathLib.resolve(paths.PROJECT_ROOT, segs.slice(0, i).join('/')));
         }
     }
-    for (const root of roots) {
-        const candidate = pathLib.resolve(root, sourceFile);
-        if (fs.existsSync(candidate)) return candidate;
-    }
-    return null;
+    return firstContainedSpecFile([...roots], sourceFile);
 }
 
 // Geänderten Diagrammtext zurückspielen: derselbe specId, also ersetzt der
@@ -4307,6 +4323,13 @@ app.post('/api/tasks', async (req, res) => {
     if (priority && !TASK_PRIORITIES.includes(priority)) {
         return res.status(400).json({ error: 'priority must be one of: critical, high, medium, low' });
     }
+    // Validated before anything is written: a malformed list used to fail in
+    // the link query AFTER the Task was created, so the client saw a 500 and a
+    // retry created a duplicate.
+    if (targetNodes !== undefined && targetNodes !== null
+        && (!Array.isArray(targetNodes) || targetNodes.some(name => typeof name !== 'string' || !name.trim()))) {
+        return res.status(400).json({ error: 'targetNodes must be an array of node names' });
+    }
     if (process.env.CODEVIS_TASK_GATE !== 'off') {
         const problems = taskSpecProblems({ title, description, workInstructions }, { subject: 'task' });
         if (problems.length > 0) {
@@ -4330,16 +4353,22 @@ app.post('/api/tasks', async (req, res) => {
             { taskId, title, description, workInstructions, priority: priority || 'medium', category: category || null, createdBy: createdBy || 'user' }
         );
 
-        // Link to target nodes if specified
+        // Link to target nodes if specified. Create and link are separate
+        // requests to the daemon, so undo the create if linking fails.
         if (targetNodes && targetNodes.length > 0) {
-            await session.run(
-                `MATCH (t:Task {taskId: $taskId})
-                 UNWIND $names AS name
-                 MATCH (n)
-                 WHERE ${codeTargetPredicate('n', 'name')}
-                 MERGE (t)-[:AFFECTS]->(n)`,
-                { taskId, names: targetNodes }
-            );
+            try {
+                await session.run(
+                    `MATCH (t:Task {taskId: $taskId})
+                     UNWIND $names AS name
+                     MATCH (n)
+                     WHERE ${codeTargetPredicate('n', 'name')}
+                     MERGE (t)-[:AFFECTS]->(n)`,
+                    { taskId, names: targetNodes }
+                );
+            } catch (error) {
+                await session.run(`MATCH (t:Task {taskId: $taskId}) DETACH DELETE t`, { taskId }).catch(() => {});
+                throw error;
+            }
         }
 
         const task = { taskId, title, description, workInstructions, status: 'backlog', priority: priority || 'medium', category };
@@ -4702,7 +4731,22 @@ io.on('connection', (socket) => {
 // reached. resetChangeDetectorSnapshots() there is the only writer besides this
 // function.
 
+// setInterval does not wait for an async callback. On a large graph one poll
+// can outlast the 2 s interval; overlapping polls then diff against each
+// other's half-written snapshots and emit duplicate or phantom task/lock events.
+let mcpPollRunning = false;
+
 async function pollForMcpChanges() {
+    if (mcpPollRunning) return;
+    mcpPollRunning = true;
+    try {
+        await pollForMcpChangesOnce();
+    } finally {
+        mcpPollRunning = false;
+    }
+}
+
+async function pollForMcpChangesOnce() {
     if (!io || io.engine.clientsCount === 0) return; // No clients = don't poll
 
     // The workspace on screen, not a fixed 'meta'. Nailed to meta, this pushed

@@ -68,6 +68,7 @@ function download(filename, text, mime = 'text/plain') {
 function MermaidView({ source, onSvg }) {
   const ref = useRef(null);
   const [error, setError] = useState(null);
+  const [svg, setSvg] = useState(null);
   const idRef = useRef(`ros-${Math.random().toString(36).slice(2)}`);
 
   useEffect(() => {
@@ -76,13 +77,18 @@ function MermaidView({ source, onSvg }) {
     (async () => {
       try {
         const mermaid = await loadMermaid();
-        const { svg } = await mermaid.render(idRef.current, source);
+        const { svg: rendered } = await mermaid.render(idRef.current, source);
         if (cancelled) return;
+        // Kept in state and written by the effect below: while the error block
+        // is shown the container is unmounted, so writing ref.current here
+        // left the next valid diagram blank.
         setError(null);
-        if (ref.current) ref.current.innerHTML = svg;
-        if (onSvg) onSvg(svg);
+        setSvg(rendered);
+        if (onSvg) onSvg(rendered);
       } catch (e) {
         if (cancelled) return;
+        setSvg(null);
+        if (onSvg) onSvg(null);
         // A diagram that mermaid cannot parse must not blank the tab — the
         // PlantUML source is still valid and still downloadable. Ein
         // Chunk-Ladefehler ist dagegen gar kein Diagrammfehler.
@@ -94,6 +100,10 @@ function MermaidView({ source, onSvg }) {
     })();
     return () => { cancelled = true; };
   }, [source, onSvg]);
+
+  useEffect(() => {
+    if (ref.current) ref.current.innerHTML = svg || '';
+  }, [svg, error]);
 
   if (error && error.stale) {
     return (
@@ -136,9 +146,18 @@ export default function RosTab({ db }) {
   const [view, setView] = useState('rendered');
   const [onlyConnected, setOnlyConnected] = useState(false);
   const [showInheritance, setShowInheritance] = useState(true);
-  const svgRef = useRef(null);
+  // State, not a ref: the download button must re-render when a diagram
+  // arrives or fails. setSvg is also a stable onSvg callback, so parent
+  // re-renders no longer restart the Mermaid render.
+  const [svg, setSvg] = useState(null);
+
+  // Only the latest request may write state: quick filter toggles otherwise let
+  // a slower, older response land last and disagree with the checkboxes.
+  const requestSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const request = ++requestSeq.current;
+    const current = () => request === requestSeq.current;
     setStatus('loading');
     setErrorMsg(null);
     try {
@@ -151,9 +170,12 @@ export default function RosTab({ db }) {
         const e = await res.json().catch(() => ({}));
         throw new Error(e.error || `HTTP ${res.status}`);
       }
-      setData(await res.json());
+      const body = await res.json();
+      if (!current()) return;
+      setData(body);
       setStatus('done');
     } catch (e) {
+      if (!current()) return;
       setErrorMsg(e.message || 'Unknown error');
       setStatus('error');
     }
@@ -207,9 +229,9 @@ export default function RosTab({ db }) {
             </button>
             <button
               style={btn(false)}
-              disabled={!svgRef.current}
-              title={svgRef.current ? 'Rendered diagram as SVG' : 'Open the rendered view first'}
-              onClick={() => svgRef.current && download('ros_architecture.svg', svgRef.current, 'image/svg+xml')}
+              disabled={!svg}
+              title={svg ? 'Rendered diagram as SVG' : 'Open the rendered view first'}
+              onClick={() => svg && download('ros_architecture.svg', svg, 'image/svg+xml')}
             >
               ⬇ .svg
             </button>
@@ -260,7 +282,7 @@ export default function RosTab({ db }) {
       {data && !empty && (
         <div style={{ ...CARD, flex: 1, minHeight: 300, overflow: 'auto' }}>
           {view === 'rendered' && (
-            <MermaidView source={data.mermaid} onSvg={(svg) => { svgRef.current = svg; }} />
+            <MermaidView source={data.mermaid} onSvg={setSvg} />
           )}
 
           {(view === 'plantuml' || view === 'mermaid') && (

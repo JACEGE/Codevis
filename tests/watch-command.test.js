@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { join } = require('node:path');
+const { join, resolve } = require('node:path');
 
 test('watch path filter accepts source and rejects generated/dependency files', async () => {
   const { shouldWatchPath } = await import('../lib/commands/watch.mjs');
@@ -165,4 +165,18 @@ test('the deferring runner waits for edits up to a cap and maps a lost build rac
   });
   assert.equal(await racing('diff'), 'deferred');
   assert.equal(started, true);
+});
+
+test('watcher skips exactly the directories the builder skips', async () => {
+  const { shouldWatchPath } = await import('../lib/commands/watch.mjs');
+  const root = resolve('/project');
+  const options = { sourceRoots: [join(root, 'src'), join(root, 'tests')] };
+  // Ignored by the builder below a source root, so no build is started.
+  assert.equal(shouldWatchPath(root, join(root, 'src', 'vendor', 'lib.js'), options), false);
+  assert.equal(shouldWatchPath(root, join(root, 'src', 'coverage', 'x.js'), options), false);
+  assert.equal(shouldWatchPath(root, join(root, 'src', '__tests__', 'a.js'), options), false);
+  // A configured test root keeps its test folders, as in the builder.
+  assert.equal(shouldWatchPath(root, join(root, 'tests', 'unit', 'a.py'), options), true);
+  assert.equal(shouldWatchPath(root, join(root, 'tests', '__tests__', 'a.js'), options), true);
+  assert.equal(shouldWatchPath(root, join(root, 'src', 'app.js'), options), true);
 });

@@ -96,6 +96,12 @@ function trackTaskTool(data, projectDir) {
     const text = responseText(data.tool_response).replace(/\\"/g, '"');
     const dir = claimsDir(projectDir);
     if (tool === 'complete_task') {
+        // Only a completion that happened releases the claims. A refused or
+        // failed call (NOT_OWNER, ERROR) used to delete them too, so the
+        // agent still working on the task lost its edit attribution. A task
+        // completed with warnings (skipped docs) or already done is finished
+        // too: keeping its claim credited later edits to a closed task.
+        if (!/"status"\s*:\s*"(OK|OK_WITH_WARNINGS|ALREADY_DONE)"/.test(text)) return;
         const taskId = data.tool_input?.taskId;
         for (const name of existsSync(dir) ? readdirSync(dir) : []) {
             try {

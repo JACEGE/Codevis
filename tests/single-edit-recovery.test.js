@@ -40,7 +40,7 @@ function harness(t, name, fault, options = {}) {
     const allocated = new Set(), deleted = new Set();
     t.after(() => assert.equal(deleted.size, allocated.size, 'every allocated syntax tree must be released'));
     vm.runInNewContext(ts.transpile(`${detect.getText(source)}\nmodule.exports = ${handler.getText(source)}`, { target: ts.ScriptTarget.ES2022 }), require('./helpers/file-publication.cjs')({
-        module: mod, process, ...fs, ...path, ...parser, ...require('node:crypto'),
+        module: mod, process, ...fs, ...path, ...parser, ...require('node:crypto'), ...require('../tools/lib/line-endings.ts'),
         getParserInstance: () => ({
             setLanguage: lang => parser.getParserInstance().setLanguage(lang),
             parse: content => {

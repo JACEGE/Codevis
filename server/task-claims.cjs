@@ -37,9 +37,11 @@ function scopePath(value, root) {
 
 async function taskRow(session, taskId) {
     const result = await session.run(`MATCH (t:Task {taskId:$taskId})
-        RETURN t.status AS status, t.assignedTo AS assignedTo, t.title AS title, t.createdBy AS createdBy`, { taskId });
+        RETURN t.status AS status, t.assignedTo AS assignedTo, t.title AS title, t.createdBy AS createdBy,
+               t.wave AS wave, t.waveStatus AS waveStatus`, { taskId });
     const r = result.records[0];
-    return r && { status: r.get('status'), assignedTo: r.get('assignedTo'), title: r.get('title'), createdBy: r.get('createdBy') };
+    return r && { status: r.get('status'), assignedTo: r.get('assignedTo'), title: r.get('title'), createdBy: r.get('createdBy'),
+        wave: r.get('wave'), waveStatus: r.get('waveStatus') };
 }
 
 async function targets(session, taskId, options, root) {
@@ -133,6 +135,17 @@ async function acquire(session, taskId, agentId, scope, root, now, ttlMs) {
             n.lockExpires=$expires, n.lockStatus=null, n.plannedBy=null, n.lockOrigin=$taskId`,
     { ids, agentId, taskId, expires: now + ttlMs });
     return { status: 'OK', taskId, activatedCount: ids.length, files: [...scope.files], nodeIds: [...scope.nodes.keys()] };
+}
+
+// Waves are a barrier: a waiting task in a wave that is not active yet cannot
+// start, whether it is claimed or dragged to In Progress. Unplanned tasks (no
+// wave) stay claimable.
+function waveBlocks(task) {
+    return task.wave != null && task.waveStatus !== 'active' && PENDING.has(task.status);
+}
+function waveInactive(task, taskId) {
+    return { status: 'WAVE_INACTIVE', taskId, wave: task.wave,
+        message: `Task belongs to wave ${task.wave}, which is not active. Activate the wave first.` };
 }
 
 async function taskClaimOperation(session, options, root) {
@@ -254,6 +267,11 @@ async function taskClaimOperation(session, options, root) {
             if (!PENDING.has(task.status) || (task.assignedTo && task.assignedTo !== agentId)) {
                 return { status: 'ALREADY_CLAIMED', currentStatus: task.status, assignedTo: task.assignedTo };
             }
+            // Waves are a barrier: a planned task waits in backlog until its wave
+            // is activated. Unplanned backlog tasks (no wave) stay claimable.
+            // plan_task_waves / move_to_wave only set waveStatus and leave the
+            // task's own status alone, so a todo task can sit in a pending wave.
+            if (waveBlocks(task)) return waveInactive(task, taskId);
             let result = { status: 'OK', activatedCount: 0 };
             if (enabled) {
                 const scope = await targets(session, taskId, { initial: true }, root);
@@ -290,18 +308,27 @@ async function taskClaimOperation(session, options, root) {
             if (operation === 'transition' && task.assignedTo && task.assignedTo !== agentId && agentId !== 'user' && !agentId.startsWith('lead-')) {
                 return { status: 'NOT_OWNER', taskId, assignedTo: task.assignedTo };
             }
-            // Completion: the assignee, the task's creator, the user or a lead
-            // (agentId 'lead-*', same convention as transitions above).
-            if (operation === 'complete' && task.assignedTo !== agentId && task.createdBy !== agentId
+            // Starting work by status change goes through the same wave barrier as a claim.
+            if (operation === 'transition' && ACTIVE.has(status) && waveBlocks(task)) return waveInactive(task, taskId);
+            // Completion: the assignee, the user or a lead (agentId 'lead-*', same
+            // convention as transitions above). The creator only while nobody
+            // else is working on it: completing another agent's active task
+            // released that agent's locks under it.
+            const creatorMayComplete = task.createdBy === agentId && (!task.assignedTo || task.assignedTo === agentId);
+            if (operation === 'complete' && task.assignedTo !== agentId && !creatorMayComplete
                 && agentId !== 'user' && !agentId.startsWith('lead-')) {
                 return { status: 'NOT_OWNER', taskId, assignedTo: task.assignedTo, createdBy: task.createdBy,
-                    message: `Only the assignee ('${task.assignedTo ?? 'nobody'}'), the task creator, the user or a lead-* agent can complete this task.` };
+                    message: `Only the assignee ('${task.assignedTo ?? 'nobody'}'), the user or a lead-* agent can complete this task` +
+                        (task.createdBy === agentId ? '; as its creator you can complete it only while nobody else is working on it.' : '.') };
             }
             if (operation === 'complete' && task.status === 'done') {
                 return { status: 'ALREADY_DONE', taskId, message: 'Task is already done. No further action is required.' };
             }
             let result = { status: enabled ? 'NOOP' : 'DISABLED', activatedCount: 0, releasedCount: 0 };
-            if (enabled && (status === 'done' || PENDING.has(status) || operation === 'complete')) {
+            // Review is review, whichever way the task got there: complete_task
+            // released the locks, while a Kanban drag or update_task_status kept
+            // them and blocked other claims until the lease expired.
+            if (enabled && (status === 'done' || status === 'review' || PENDING.has(status) || operation === 'complete')) {
                 const released = await session.run(`MATCH (n) WHERE n.lockGroup=$taskId
                     SET n.locked=null, n.lockedBy=null, n.lockGroup=null, n.lockExpires=null,
                         n.lockStatus=null, n.lockOrigin=null, n.plannedBy=null RETURN count(n) AS count`, { taskId });

@@ -2,21 +2,19 @@ import { createRequire } from "module";
 // Only `int()` is needed here; the embedded compat client provides it.
 const ladybug: any = createRequire(import.meta.url)("../../server/ladybug-driver.cjs");
 const { normalizeDepth } = createRequire(import.meta.url)("../lib/lock-depth.cjs");
+const { latestBackupsFor } = createRequire(import.meta.url)("../lib/edit-backups.cjs");
 import type { ServerContext, ToolHandler, ToolModule } from "../lib/graph.js";
 import { graphInt, pickDbDriver, pickDbName } from "../lib/graph.js";
 import { syncLockManifest, syncFileToGraph } from "../lib/graph-sync.js";
+import { getLanguageAndQuery, getParserInstance } from "../lib/treesitter.js";
 import { invalidEdgeType, expireStaleLocks, lockTtlMs, DEFAULT_LOCK_TTL_MS, MAX_LOCK_TTL_MS } from "../lib/locks.js";
-import { resolve, extname, dirname } from "path";
-import { fileURLToPath } from "url";
+import { resolve, extname } from "path";
 import { randomUUID } from "crypto";
+import { projectRoot } from "../lib/project-root.js";
 
-// This file runs as an ES module, where `__dirname` does not exist. Two handlers
-// used it as a fallback for CODEVIS_PROJECT_DIR and therefore threw
-// "__dirname is not defined" the moment that env var was unset — which is the
-// normal case for a worker. release_node was the visible casualty: a worker
-// could take locks but never hand them back, so finished workers kept holding
-// files and blocked every other agent until a lead force-unlocked them.
-const __dirname_locks = dirname(fileURLToPath(import.meta.url));
+// Without CODEVIS_PROJECT_DIR — the normal case for a worker — two handlers
+// once threw "__dirname is not defined" and later fell back to the CodeVis
+// package directory. Both now resolve the project through projectRoot().
 
 // Shared session pattern: one session per invocation, auto-expire stale locks, then dispatch
 async function withLockSession<T>(
@@ -37,6 +35,69 @@ async function withLockSession<T>(
         await session.close();
     }
 }
+
+// Lead-only operations. An agent that names itself must carry the lead prefix;
+// an anonymous caller is only trusted outside the worker role, because a worker
+// server without CODEVIS_AGENT_ID would otherwise skip the check entirely.
+function isLeadCaller(callerAgentId: string | undefined): boolean {
+    if (callerAgentId) return callerAgentId.startsWith("lead");
+    return process.env.CODEVIS_ROLE !== "worker";
+}
+
+// Who is calling. In the worker role that is this server's own agent, never an
+// argument: a worker could otherwise pass callerAgentId "lead-x" and pass the
+// lead check it exists to enforce.
+function callerOf(args: any, ctx: any): string | undefined {
+    if (process.env.CODEVIS_ROLE === "worker") return ctx.defaultAgentId || undefined;
+    return args.callerAgentId || ctx.defaultAgentId;
+}
+
+// Node names are not unique (every class can have a `render`). Lead operations
+// act on exactly one node: callers may pin it by `nodeId` (elementId) or narrow
+// it by `file`; several remaining candidates are reported instead of all being
+// changed at once.
+async function resolveSingleNode(
+    session: any,
+    args: Record<string, any>,
+    condition: string | null,
+): Promise<{ id: string; record: any } | { error: any }> {
+    const where = condition ? [condition] : [];
+    const params: Record<string, any> = {};
+    if (args.nodeId) {
+        where.push("elementId(n) = $nodeId");
+        params.nodeId = String(args.nodeId);
+    } else {
+        where.push("n.name = $nodeName");
+        params.nodeName = args.nodeName;
+    }
+    if (args.file) {
+        where.push("n.file = $file");
+        params.file = args.file;
+    }
+    const result = await session.run(
+        `MATCH (n) WHERE ${where.join(" AND ")}
+         RETURN elementId(n) AS id, n.name AS name, n.file AS file, n.lockedBy AS lockedBy,
+                n.lockGroup AS lockGroup, n.releaseSummary AS summary,
+                n.editInProgress AS editInProgress, n.editInProgressSince AS editInProgressSince`,
+        params
+    );
+    if (result.records.length === 0) return { error: null };
+    if (result.records.length > 1) {
+        return { error: {
+            status: "AMBIGUOUS",
+            error: `${result.records.length} nodes named '${args.nodeName}' match. Pass nodeId or file to pick one.`,
+            candidates: result.records.map((r: any) => ({
+                nodeId: r.get("id"), file: r.get("file"), lockedBy: r.get("lockedBy"),
+            })),
+        } };
+    }
+    return { id: result.records[0].get("id"), record: result.records[0] };
+}
+
+const nodeSelectorProperties = {
+    nodeId: { type: "string", description: "elementId of the node. Disambiguates nodes that share a name." },
+    file: { type: "string", description: "File of the node. Narrows nodeName when several nodes share it." },
+};
 
 const handlers: Record<string, ToolHandler> = {
     lock_subgraph: async (args, ctx) => {
@@ -272,7 +333,7 @@ const handlers: Record<string, ToolHandler> = {
     },
 
     force_unlock: async (args, ctx) => {
-        args.callerAgentId = args.callerAgentId || ctx.defaultAgentId;
+        args.callerAgentId = callerOf(args, ctx);
         return withLockSession(args, ctx, async (session, driver) => {
             let result: any;
 
@@ -367,7 +428,7 @@ const handlers: Record<string, ToolHandler> = {
 
             // Sync this file's graph data before marking for release
             // This ensures the lead reviews with up-to-date CALLS edges
-            const projectDir = process.env.CODEVIS_PROJECT_DIR || resolve(__dirname_locks, "../..");
+            const projectDir = projectRoot();
             const absolutePath = resolve(projectDir, file);
             const ext = extname(file);
             const syncResult = await syncFileToGraph(absolutePath, file, ext, driver);
@@ -389,99 +450,102 @@ const handlers: Record<string, ToolHandler> = {
     },
 
     approve_release: async (args, ctx) => {
-        args.callerAgentId = args.callerAgentId || ctx.defaultAgentId;
+        args.callerAgentId = callerOf(args, ctx);
         return withLockSession(args, ctx, async (session, driver) => {
             const { nodeName, callerAgentId } = args;
-            if (!nodeName) {
+            if (!nodeName && !args.nodeId) {
                 return { content: [{ type: "text", text: JSON.stringify({ status: "ERROR", error: "nodeName is required." }) }], isError: true } as any;
             }
 
             // Only lead agents can approve (prefix check)
-            if (callerAgentId && !callerAgentId.startsWith("lead")) {
+            if (!isLeadCaller(callerAgentId)) {
                 return { content: [{ type: "text", text: JSON.stringify({ status: "DENIED", error: "Only lead agents can approve releases." }) }] };
             }
 
             // Check node is pending release
-            const check = await session.run(
-                `MATCH (n {name: $nodeName}) WHERE n.pendingRelease = true
-                 RETURN n.name AS name, n.file AS file, n.lockedBy AS lockedBy, n.lockGroup AS lockGroup, n.releaseSummary AS summary`,
-                { nodeName }
-            );
-
-            if (check.records.length === 0) {
-                return { content: [{ type: "text", text: JSON.stringify({ status: "NOT_FOUND", error: `Node '${nodeName}' has no pending release.` }) }] };
+            const target = await resolveSingleNode(session, args, "n.pendingRelease = true");
+            if ("error" in target) {
+                return { content: [{ type: "text", text: JSON.stringify(target.error
+                    ?? { status: "NOT_FOUND", error: `Node '${nodeName ?? args.nodeId}' has no pending release.` }) }] };
             }
 
-            const file = check.records[0].get("file");
-            const lockedBy = check.records[0].get("lockedBy");
-            const lockGroup = check.records[0].get("lockGroup");
+            const file = target.record.get("file");
+            const lockedBy = target.record.get("lockedBy");
+            const lockGroup = target.record.get("lockGroup");
 
             // Release the node — clear all lock properties
             await session.run(
-                `MATCH (n {name: $nodeName}) WHERE n.pendingRelease = true
+                `MATCH (n) WHERE elementId(n) = $id AND n.pendingRelease = true
                  SET n.locked = null, n.lockedBy = null, n.lockGroup = null, n.lockExpires = null, n.lockOrigin = null,
                      n.pendingRelease = null, n.releaseSummary = null, n.releaseRequestedAt = null, n.releaseRequestedBy = null,
                      n.releasedAt = timestamp(), n.releasedBy = $callerAgentId`,
-                { nodeName, callerAgentId: callerAgentId || "lead-agent" }
+                { id: target.id, callerAgentId: callerAgentId || "lead-agent" }
             );
 
             // Sync lock manifest
             await syncLockManifest(driver);
 
             // Check if any blocked tasks can now proceed
-            const unblockedTasks = await session.run(
+            // Filtering on `dep.locked = true` before aggregating kept only tasks
+            // that still had a locked dependency, so none could ever qualify.
+            // Aggregate in JavaScript instead (see the Ladybug pitfalls in CLAUDE.md).
+            const blockedDeps = await session.run(
                 `MATCH (t:Task {status: 'blocked'})-[:AFFECTS]->(dep)
-                 WHERE dep.locked = true
-                 WITH t, collect(dep.name) AS stillLocked
-                 WHERE size(stillLocked) = 0
-                 RETURN t.taskId AS taskId, t.title AS title`
+                 RETURN t.taskId AS taskId, t.title AS title, dep.locked = true AS depLocked`
             );
-
-            const nowUnblocked = unblockedTasks.records.map(r => ({
-                taskId: r.get("taskId"),
-                title: r.get("title"),
-            }));
+            const blocked = new Map<string, { taskId: string; title: string; locked: boolean }>();
+            for (const r of blockedDeps.records) {
+                const taskId = r.get("taskId");
+                const entry = blocked.get(taskId) ?? { taskId, title: r.get("title"), locked: false };
+                entry.locked = entry.locked || r.get("depLocked") === true;
+                blocked.set(taskId, entry);
+            }
+            const nowUnblocked = [...blocked.values()]
+                .filter(task => !task.locked)
+                .map(({ taskId, title }) => ({ taskId, title }));
 
             return { content: [{ type: "text", text: JSON.stringify({
                 status: "RELEASED",
-                message: `Node '${nodeName}' (${file}) released. Previously locked by '${lockedBy}'.`,
-                nodeName, file, previousOwner: lockedBy, lockGroup,
+                message: `Node '${target.record.get("name")}' (${file}) released. Previously locked by '${lockedBy}'.`,
+                nodeName: target.record.get("name"), nodeId: target.id, file, previousOwner: lockedBy, lockGroup,
                 tasksNowUnblocked: nowUnblocked,
             }) }] };
         });
     },
 
     reject_release: async (args, ctx) => {
-        args.callerAgentId = args.callerAgentId || ctx.defaultAgentId;
+        args.callerAgentId = callerOf(args, ctx);
         return withLockSession(args, ctx, async (session) => {
             const { nodeName, reason, callerAgentId } = args;
-            if (!nodeName || !reason) {
+            if ((!nodeName && !args.nodeId) || !reason) {
                 return { content: [{ type: "text", text: JSON.stringify({ status: "ERROR", error: "nodeName and reason are required." }) }], isError: true } as any;
             }
 
-            if (callerAgentId && !callerAgentId.startsWith("lead")) {
+            if (!isLeadCaller(callerAgentId)) {
                 return { content: [{ type: "text", text: JSON.stringify({ status: "DENIED", error: "Only lead agents can reject releases." }) }] };
             }
 
-            // Clear pendingRelease, keep lock active
-            const check = await session.run(
-                `MATCH (n {name: $nodeName}) WHERE n.pendingRelease = true
-                 SET n.pendingRelease = null, n.releaseSummary = null, n.releaseRequestedAt = null, n.releaseRequestedBy = null,
-                     n.releaseRejectedReason = $reason, n.releaseRejectedAt = timestamp()
-                 RETURN n.name AS name, n.file AS file, n.lockedBy AS lockedBy`,
-                { nodeName, reason }
-            );
-
-            if (check.records.length === 0) {
-                return { content: [{ type: "text", text: JSON.stringify({ status: "NOT_FOUND", error: `Node '${nodeName}' has no pending release.` }) }] };
+            const target = await resolveSingleNode(session, args, "n.pendingRelease = true");
+            if ("error" in target) {
+                return { content: [{ type: "text", text: JSON.stringify(target.error
+                    ?? { status: "NOT_FOUND", error: `Node '${nodeName ?? args.nodeId}' has no pending release.` }) }] };
             }
 
-            const lockedBy = check.records[0].get("lockedBy");
+            // Clear pendingRelease, keep lock active
+            await session.run(
+                `MATCH (n) WHERE elementId(n) = $id AND n.pendingRelease = true
+                 SET n.pendingRelease = null, n.releaseSummary = null, n.releaseRequestedAt = null, n.releaseRequestedBy = null,
+                     n.releaseRejectedReason = $reason, n.releaseRejectedAt = timestamp()`,
+                { id: target.id, reason }
+            );
+
+            const lockedBy = target.record.get("lockedBy");
+            const name = target.record.get("name");
 
             return { content: [{ type: "text", text: JSON.stringify({
                 status: "REJECTED",
-                message: `Release of '${nodeName}' rejected. Node stays locked by '${lockedBy}'. Reason: ${reason}`,
-                nodeName, lockedBy, reason,
+                message: `Release of '${name}' rejected. Node stays locked by '${lockedBy}'. Reason: ${reason}`,
+                nodeName: name, nodeId: target.id, lockedBy, reason,
             }) }] };
         });
     },
@@ -513,34 +577,35 @@ const handlers: Record<string, ToolHandler> = {
     },
 
     recover_stale_edit: async (args, ctx) => {
-        args.callerAgentId = args.callerAgentId || ctx.defaultAgentId;
+        args.callerAgentId = callerOf(args, ctx);
         return withLockSession(args, ctx, async (session, driver) => {
             const { nodeName, callerAgentId } = args;
-            if (!nodeName) {
+            if (!nodeName && !args.nodeId) {
                 return { content: [{ type: "text", text: JSON.stringify({ status: "ERROR", error: "nodeName is required." }) }], isError: true } as any;
             }
 
             // Only lead agents can invoke recovery
-            if (callerAgentId && !callerAgentId.startsWith("lead")) {
+            if (!isLeadCaller(callerAgentId)) {
                 return { content: [{ type: "text", text: JSON.stringify({ status: "DENIED", error: "Only lead agents can invoke recover_stale_edit." }) }] };
             }
 
             const EDIT_STALE_MS = 300000; // 5 minutes
 
-            // Find the node — must have a stale editInProgress flag
-            const nodeResult = await session.run(
-                `MATCH (n {name: $nodeName})
-                 RETURN n.name AS name, n.file AS file, n.lockedBy AS lockedBy,
-                        n.lockGroup AS lockGroup, n.editInProgress AS editInProgress,
-                        n.editInProgressSince AS editInProgressSince`,
-                { nodeName }
-            );
-
-            if (nodeResult.records.length === 0) {
-                return { content: [{ type: "text", text: JSON.stringify({ status: "NOT_FOUND", error: `Node '${nodeName}' not found.` }) }] };
+            // Find the node carrying the flag, so a name shared with untouched
+            // nodes does not make the call ambiguous.
+            const target = await resolveSingleNode(session, args, "n.editInProgress = true");
+            if ("error" in target && target.error === null) {
+                const exists = await resolveSingleNode(session, args, null);
+                if ("error" in exists && exists.error === null) {
+                    return { content: [{ type: "text", text: JSON.stringify({ status: "NOT_FOUND", error: `Node '${nodeName ?? args.nodeId}' not found.` }) }] };
+                }
+                return { content: [{ type: "text", text: JSON.stringify({ status: "NO_STALE_EDIT", message: `Node '${nodeName ?? args.nodeId}' has no editInProgress flag. No recovery needed.` }) }] };
+            }
+            if ("error" in target) {
+                return { content: [{ type: "text", text: JSON.stringify(target.error) }] };
             }
 
-            const r = nodeResult.records[0];
+            const r = target.record;
             const nodeFile = r.get("file");
             const lockedBy = r.get("lockedBy");
             const editInProgress = r.get("editInProgress");
@@ -564,7 +629,7 @@ const handlers: Record<string, ToolHandler> = {
             let fileRestored = false;
             let fileCorrupt = false;
             let backupUsed: string | null = null;
-            const projectDir = process.env.CODEVIS_PROJECT_DIR || resolve(__dirname_locks, "../..");
+            const projectDir = projectRoot();
 
             if (nodeFile) {
                 const absoluteFilePath = resolve(projectDir, nodeFile);
@@ -575,7 +640,6 @@ const handlers: Record<string, ToolHandler> = {
 
                     // Check if current file has syntax errors (using tree-sitter)
                     if (existsSync(absoluteFilePath)) {
-                        const { getLanguageAndQuery, getParserInstance } = await import("../lib/treesitter.js");
                         const { extname } = await import("path");
                         const ext = extname(nodeFile);
                         try {
@@ -590,14 +654,11 @@ const handlers: Record<string, ToolHandler> = {
                         }
                     }
 
-                    // Find most recent backup for this agent + file
-                    if (existsSync(backupDir)) {
-                        const escapedFile = nodeFile.replace(/[^a-zA-Z0-9._-]/g, "_");
-                        const agentPrefix = lockedBy || "";
-                        const candidates = readdirSync(backupDir)
-                            .filter(f => f.endsWith(".bak") && f.includes(agentPrefix) && f.includes(escapedFile))
-                            .sort()
-                            .reverse();
+                    // Find most recent backup for this agent + file. Backup names
+                    // carry a hash of the agent and of the file (edit-backups.cjs),
+                    // never the raw ids, so they must be matched through that module.
+                    if (existsSync(backupDir) && lockedBy) {
+                        const candidates = latestBackupsFor(readdirSync(backupDir), nodeFile, lockedBy, projectDir);
 
                         if (candidates.length > 0) {
                             // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
@@ -626,17 +687,17 @@ const handlers: Record<string, ToolHandler> = {
 
             // Clear editInProgress flag
             await session.run(
-                `MATCH (n {name: $nodeName})
+                `MATCH (n) WHERE elementId(n) = $id
                  SET n.editInProgress = null, n.editInProgressSince = null`,
-                { nodeName }
+                { id: target.id }
             );
 
             // Release the lock
             await session.run(
-                `MATCH (n {name: $nodeName}) WHERE n.locked = true
+                `MATCH (n) WHERE elementId(n) = $id AND n.locked = true
                  SET n.locked = null, n.lockedBy = null, n.lockGroup = null,
                      n.lockExpires = null, n.lockOrigin = null`,
-                { nodeName }
+                { id: target.id }
             );
 
             // Sync lock manifest
@@ -809,6 +870,7 @@ const definitions = [
             type: "object",
             properties: {
                 nodeName: { type: "string", description: "Name of the node to approve release for." },
+                ...nodeSelectorProperties,
                 callerAgentId: { type: "string", description: "Lead agent ID approving the release." },
                 db: { type: "string", description: "Database: 'project_db' or 'codevis_db'.", enum: ["project_db", "codevis_db"] }
             },
@@ -823,6 +885,7 @@ const definitions = [
             type: "object",
             properties: {
                 nodeName: { type: "string", description: "Name of the node whose release is rejected." },
+                ...nodeSelectorProperties,
                 reason: { type: "string", description: "Why the release was rejected. Worker will see this." },
                 callerAgentId: { type: "string", description: "Lead agent ID rejecting the release." },
                 db: { type: "string", description: "Database: 'project_db' or 'codevis_db'.", enum: ["project_db", "codevis_db"] }
@@ -850,6 +913,7 @@ const definitions = [
             type: "object",
             properties: {
                 nodeName: { type: "string", description: "Name of the node with a stale editInProgress flag." },
+                ...nodeSelectorProperties,
                 callerAgentId: { type: "string", description: "Lead agent ID invoking recovery." },
                 db: { type: "string", description: "Database: 'project_db' or 'codevis_db'.", enum: ["project_db", "codevis_db"] }
             },

@@ -28,7 +28,7 @@ function harness(t, fault, options = {}) {
     const mod = { exports: {} };
     vm.runInNewContext(ts.transpile(`${guard}\nmodule.exports = ${handler.getText(source)}`, { target: ts.ScriptTarget.ES2022 }), require('./helpers/file-publication.cjs')({
         module: mod, process, ...fs, ...path, ...require('node:crypto'), ...parser,
-        ...require('../tools/lib/insertion-position.ts'),
+        ...require('../tools/lib/insertion-position.ts'), ...require('../tools/lib/line-endings.ts'),
         PROJECT_ROOT: root, ALLOWED_EXTRA_DIRS: [], isPathAllowed: () => true, withFileLock: async (_, fn) => fn(),
         assertFileScope: async () => { if (fault === 'conflict') fs.writeFileSync(file, 'new user edit'); },
         getLanguageAndQuery: async ext => {

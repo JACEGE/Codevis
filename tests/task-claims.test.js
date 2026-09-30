@@ -239,15 +239,19 @@ test('re-claiming after another task took the expired scope reports the conflict
     assert.equal((await op('claim','a')).status,'LOCK_CONFLICT');
 });
 
-test('completion is allowed for the creator and lead agents but not for other agents', async t => {
+test('completion is allowed for the assignee and lead agents, and for the creator only while nobody else works on it', async t => {
     const { s, op } = await fixture(t);
     await s.run("MATCH (t:Task {taskId:'a'}) SET t.createdBy='creator'");
     await op('plan','a',['new/a.js']);
     await op('claim','a');
     assert.equal((await op('complete','a',undefined,{agentId:'worker-b'})).status,'NOT_OWNER');
-    const done = await op('complete','a',undefined,{agentId:'creator'});
+    // worker-a is working on it: its creator must not release worker-a's locks.
+    assert.equal((await op('complete','a',undefined,{agentId:'creator'})).status,'NOT_OWNER');
+    const done = await op('complete','a',undefined,{agentId:'worker-a'});
     assert.equal(done.newStatus,'review');
     assert.equal(done.releasedCount,1);
+    await s.run("CREATE (:Task {taskId:'c',status:'todo',createdBy:'creator'})");
+    assert.equal((await op('complete','c',undefined,{agentId:'creator'})).newStatus,'review');
     await op('plan','b',['new/b.js']);
     await op('claim','b');
     assert.equal((await op('complete','b',undefined,{agentId:'lead-agent'})).newStatus,'review');
@@ -266,4 +270,38 @@ test('the scope guard points an owner with an expired lease to renewal', async t
     });
     await op('claim','a');
     await withScopeGuard({driver:{session:()=>s},root,agentId:'worker-a',taskId:'a'}, () => assertFileScope('new/a.js'));
+});
+
+test('a task in an inactive wave cannot be claimed; unplanned backlog tasks can', async t => {
+    const { s, op } = await fixture(t);
+    await s.run("CREATE (:Task {taskId:'w2',status:'backlog',wave:2})");
+    const refused = await op('claim','w2');
+    assert.equal(refused.status,'WAVE_INACTIVE');
+    const w2 = await s.run("MATCH (t:Task {taskId:'w2'}) RETURN t.status AS status");
+    assert.equal(w2.records[0].get('status'),'backlog');
+    assert.equal((await op('claim','b')).status,'OK');
+});
+
+test('the wave barrier also holds for todo tasks and for a drag to In Progress', async t => {
+    const { s, op } = await fixture(t);
+    // plan_task_waves / move_to_wave set waveStatus but leave status at todo.
+    await s.run("CREATE (:Task {taskId:'w3',status:'todo',wave:3,waveStatus:'pending'})");
+    assert.equal((await op('claim','w3')).status,'WAVE_INACTIVE');
+    const dragged = await op('transition','w3',undefined,{agentId:'user',newStatus:'in_progress'});
+    assert.equal(dragged.status,'WAVE_INACTIVE');
+    assert.equal((await s.run("MATCH (t:Task {taskId:'w3'}) RETURN t.status AS s")).records[0].get('s'),'todo');
+    // Once the wave is active, both work.
+    await s.run("MATCH (t:Task {taskId:'w3'}) SET t.waveStatus='active'");
+    assert.equal((await op('claim','w3')).status,'OK');
+});
+
+test('moving a task to review releases its locks on every path', async t => {
+    const { s, op } = await fixture(t);
+    await op('plan','a',['new/a.js']);
+    await op('claim','a');
+    const moved = await op('transition','a',undefined,{agentId:'worker-a',newStatus:'review'});
+    assert.equal(moved.newStatus,'review');
+    assert.equal(moved.releasedCount,1);
+    const lock = await s.run("MATCH (n:TaskScope {file:'new/a.js'}) RETURN n.locked AS locked");
+    assert.equal(lock.records[0].get('locked'),null);
 });

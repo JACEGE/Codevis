@@ -100,8 +100,10 @@ const handlers: Record<string, ToolHandler> = {
 
     list_ideas: async (args, ctx) => {
         return withIdeaSession(args, ctx, async (session) => {
-            // Default: only open ideas. Pass status='all' to include promoted ones.
+            // Default: only open ideas. 'promoted' lists promoted ones, 'all' both.
+            // Every value but 'all' used to fall into the open-only branch.
             const showAll = args.status === "all";
+            const status = args.status === "promoted" ? "promoted" : "open";
             const result = await session.run(
                 showAll
                     ? `MATCH (i:Idea)
@@ -110,12 +112,13 @@ const handlers: Record<string, ToolHandler> = {
                               i.category AS intent, i.kind AS kind, i.priority AS priority,
                               i.createdAt AS createdAt
                        ORDER BY i.createdAt`
-                    : `MATCH (i:Idea) WHERE i.status = 'open'
+                    : `MATCH (i:Idea) WHERE i.status = $status
                        RETURN i.taskId AS ideaId, i.content AS content,
                               i.status AS status, i.createdBy AS createdBy,
                               i.category AS intent, i.kind AS kind, i.priority AS priority,
                               i.createdAt AS createdAt
-                       ORDER BY i.createdAt`
+                       ORDER BY i.createdAt`,
+                showAll ? {} : { status }
             );
             const ideas = result.records.map((r: any) => ({
                 ideaId: r.get("ideaId"),
@@ -167,6 +170,15 @@ const handlers: Record<string, ToolHandler> = {
     delete_idea: async (args, ctx) => {
         if (!args.ideaId) return fail("ideaId is required");
         return withIdeaSession(args, ctx, async (session) => {
+            const found = await session.run(
+                `MATCH (i:Idea {taskId: $ideaId}) RETURN count(i) AS c`,
+                { ideaId: args.ideaId }
+            );
+            if (Number(found.records[0]?.get("c")?.toNumber?.() ?? found.records[0]?.get("c") ?? 0) === 0) {
+                // Same status the Task tools use for a missing ID, so an agent can
+                // tell "does not exist" from a failure worth retrying.
+                return { content: [{ type: "text", text: JSON.stringify({ status: "NOT_FOUND", ideaId: args.ideaId, error: `Idea '${args.ideaId}' not found` }) }], isError: true } as any;
+            }
             await session.run(
                 `MATCH (i:Idea {taskId: $ideaId}) DETACH DELETE i`,
                 { ideaId: args.ideaId }

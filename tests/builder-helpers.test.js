@@ -142,3 +142,23 @@ describe("findFiles exclude globs", () => {
         }
     });
 });
+
+it('unresolved imports keep distinct module names', () => {
+    const { externalModuleName } = __testing__;
+    assert.equal(externalModuleName('lodash'), 'lodash');
+    assert.equal(externalModuleName('lodash/fp'), 'lodash');
+    assert.equal(externalModuleName("'react-dom/client'"), 'react-dom');
+    assert.equal(externalModuleName('@scope/a'), '@scope/a');
+    assert.equal(externalModuleName('@scope/b/deep'), '@scope/b');
+    assert.equal(externalModuleName('./missing'), './missing');
+    assert.equal(externalModuleName('../other/x'), '../other/x');
+    assert.equal(externalModuleName('.mod'), '.mod');
+    // Unresolved relative imports are anchored at the importing file, so
+    // './utils' from two folders stays two modules.
+    assert.equal(externalModuleName('./utils', 'src/a/view.js'), 'src/a/utils');
+    assert.equal(externalModuleName('./utils', 'src/b/view.js'), 'src/b/utils');
+    assert.equal(externalModuleName('../shared/x', 'src/a/view.js'), 'src/shared/x');
+    assert.equal(externalModuleName('lodash/fp', 'src/a/view.js'), 'lodash');
+    assert.equal(externalModuleName('lib/foo.h'), 'lib/foo.h');
+    assert.equal(externalModuleName('os.path'), 'os.path');
+});

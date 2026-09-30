@@ -222,6 +222,7 @@ function loadConfig() {
 
 module.exports = {
     PROJECT_ROOT,
+    canonicalize,
     DATA_DIR,
     DB_PATHS,
     PIDFILE,

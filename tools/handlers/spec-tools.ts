@@ -4,6 +4,7 @@ import { resolve, dirname, basename, extname } from "path";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
+import { projectRoot } from "../lib/project-root.js";
 
 // All spec DB logic lives in scripts/spec/spec_db.cjs (single source of truth,
 // shared with the bridge). These handlers are thin MCP wrappers: read the file,
@@ -12,7 +13,7 @@ const require = createRequire(import.meta.url);
 const __dirname_spec = dirname(fileURLToPath(import.meta.url));
 const specDb = require(resolve(__dirname_spec, "../../scripts/spec/spec_db.cjs"));
 
-const SPEC_PROJECT_ROOT = process.env.CODEVIS_PROJECT_DIR || resolve(__dirname_spec, "../..");
+const SPEC_PROJECT_ROOT = projectRoot();
 
 const ok = mcpOk;
 const err = mcpErr;

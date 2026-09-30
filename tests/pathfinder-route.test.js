@@ -70,3 +70,18 @@ test('relation allowlist rejects arbitrary relationship injection', () => {
     assert.deepEqual(normalizeRelations(['CALLS', 'CALLS']), ['CALLS']);
     assert.throws(() => normalizeRelations(['CALLS]->(x) DELETE x //']), /relations must contain/);
 });
+
+test('a route found before the state budget runs out is returned, not discarded', () => {
+    // A hub with more callees than the state budget, the target among them.
+    // The 1-hop route is found on the first expansion; the search used to keep
+    // counting queued states and then threw SEARCH_LIMIT anyway.
+    const fanout = [];
+    for (let i = 0; i < 100005; i++) fanout.push({ next: `n${i}`, source: 'hub', target: `n${i}`, relType: 'CALLS' });
+    fanout.push({ next: 'target', source: 'hub', target: 'target', relType: 'CALLS' });
+    for (let i = 0; i < 100005; i++) fanout.push({ next: `m${i}`, source: 'hub', target: `m${i}`, relType: 'CALLS' });
+    const adjacency = new Map([['hub', fanout]]);
+    for (let i = 0; i < 100005; i++) adjacency.set(`n${i}`, [{ next: `x${i}`, source: `n${i}`, target: `x${i}`, relType: 'CALLS' }]);
+    const routes = findShortestRoutes(adjacency, 'hub', 'target', 8, 3);
+    assert.equal(routes.length, 1);
+    assert.deepEqual(routes[0].nodeIds, ['hub', 'target']);
+});

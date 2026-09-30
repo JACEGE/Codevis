@@ -117,17 +117,19 @@ test('task completion never fails on graph sync problems and tells the agent it 
     assert.deepEqual(retried.failedFiles, []);
 });
 
-test('the task creator and lead agents may complete a task; strangers may not', async t => {
+test('lead agents may complete an assigned task; its creator and strangers may not', async t => {
     const h = await fixture(t);
     await h.session.run("MATCH (t:Task {taskId:'task'}) SET t.status='in_progress', t.assignedTo='worker-gone', t.createdBy='creator' CREATE (:Task {taskId:'led', status:'in_progress', assignedTo:'worker-gone', createdBy:'someone'})");
     const denied = await h.run('complete_task', { taskId: 'task', agentId: 'stranger' });
     assert.equal(denied.status, 'NOT_OWNER');
     assert.equal(denied.isError, true);
-    assert.match(denied.message, /task creator/);
+    assert.match(denied.message, /assignee/);
+    // Another agent holds it: completing would release that agent's locks.
     const byCreator = await h.run('complete_task', { taskId: 'task', agentId: 'creator' });
-    assert.equal(byCreator.status, 'OK');
-    assert.equal(byCreator.newStatus, 'review');
+    assert.equal(byCreator.status, 'NOT_OWNER');
+    assert.match(byCreator.message, /as its creator/);
     assert.equal((await h.run('complete_task', { taskId: 'led', agentId: 'lead-agent' })).status, 'OK');
+    assert.equal((await h.run('complete_task', { taskId: 'task', agentId: 'lead-agent' })).newStatus, 'review');
 });
 
 test('agents are told that review is terminal when they try to mark a task done', async t => {

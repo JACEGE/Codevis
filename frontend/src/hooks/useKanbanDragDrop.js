@@ -47,7 +47,7 @@ export default function useKanbanDragDrop({ db, tasks, setTasks, optimisticUpdat
         const members = tasks.filter((task) => task.epicId === epicId && task.status !== status);
         await Promise.all(members.map((task) => write(
             task.taskId, { status },
-            `${BRIDGE_URL}/api/tasks/${task.taskId}/status?db=${encodeURIComponent(db)}`,
+            `${BRIDGE_URL}/api/tasks/${encodeURIComponent(task.taskId)}/status?db=${encodeURIComponent(db)}`,
             {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
@@ -72,7 +72,7 @@ export default function useKanbanDragDrop({ db, tasks, setTasks, optimisticUpdat
             const task = draggedTask;
             const removed = await write(
                 task.taskId, { epicId: null, epicTitle: null, seqIndex: null },
-                `${BRIDGE_URL}/api/epics/${task.epicId}/tasks/${task.taskId}?db=${encodeURIComponent(db)}`,
+                `${BRIDGE_URL}/api/epics/${encodeURIComponent(task.epicId)}/tasks/${encodeURIComponent(task.taskId)}?db=${encodeURIComponent(db)}`,
                 { method: 'DELETE' },
                 `Remove "${task.title || task.taskId}" from epic`,
             );
@@ -89,7 +89,7 @@ export default function useKanbanDragDrop({ db, tasks, setTasks, optimisticUpdat
         const task = draggedTask;
         await write(
             task.taskId, { status },
-            `${BRIDGE_URL}/api/tasks/${task.taskId}/status?db=${encodeURIComponent(db)}`,
+            `${BRIDGE_URL}/api/tasks/${encodeURIComponent(task.taskId)}/status?db=${encodeURIComponent(db)}`,
             {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
@@ -107,14 +107,14 @@ export default function useKanbanDragDrop({ db, tasks, setTasks, optimisticUpdat
         try {
             await updateTask(
                 taskId, { epicId, epicTitle: null, seqIndex: null },
-                `${BRIDGE_URL}/api/epics/${epicId}/tasks/${taskId}?db=${encodeURIComponent(db)}`,
+                `${BRIDGE_URL}/api/epics/${encodeURIComponent(epicId)}/tasks/${encodeURIComponent(taskId)}?db=${encodeURIComponent(db)}`,
                 { method: 'PUT' },
             );
             if (workspace !== lifetime.current) return;
             if (task && task.status !== status) {
                 await updateTask(
                     taskId, { status },
-                    `${BRIDGE_URL}/api/tasks/${taskId}/status?db=${encodeURIComponent(db)}`,
+                    `${BRIDGE_URL}/api/tasks/${encodeURIComponent(taskId)}/status?db=${encodeURIComponent(db)}`,
                     {
                         method: 'PATCH',
                         headers: { 'Content-Type': 'application/json' },

@@ -50,7 +50,7 @@ export default function useIdeas({ db, onError }) {
             idea.ideaId === ideaId ? applyOptimisticUpdate(optimisticUpdates.current, idea, patch, operation) : idea
         )));
         try {
-            await requestJson(`${BRIDGE_URL}/api/ideas/${ideaId}?db=${encodeURIComponent(db)}`, {
+            await requestJson(`${BRIDGE_URL}/api/ideas/${encodeURIComponent(ideaId)}?db=${encodeURIComponent(db)}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(patch),
@@ -91,7 +91,7 @@ export default function useIdeas({ db, onError }) {
         const workspace = lifetime.current;
         const revision = editRevision.current;
         try {
-            await requestJson(`${BRIDGE_URL}/api/ideas/${ideaId}?db=${encodeURIComponent(db)}`, {
+            await requestJson(`${BRIDGE_URL}/api/ideas/${encodeURIComponent(ideaId)}?db=${encodeURIComponent(db)}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ content }),
@@ -105,7 +105,7 @@ export default function useIdeas({ db, onError }) {
     const deleteIdea = useCallback(async (ideaId) => {
         const workspace = lifetime.current;
         try {
-            await requestJson(`${BRIDGE_URL}/api/ideas/${ideaId}?db=${encodeURIComponent(db)}`, {
+            await requestJson(`${BRIDGE_URL}/api/ideas/${encodeURIComponent(ideaId)}?db=${encodeURIComponent(db)}`, {
                 method: 'DELETE',
             });
         } catch (error) {

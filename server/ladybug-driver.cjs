@@ -166,10 +166,10 @@ function encodeParams(params) {
 
 // ── HTTP to daemon ───────────────────────────────────────────────────────────
 
-function httpGet(pathname, timeoutMs = 1000) {
+function httpGet(pathname, timeoutMs = 1000, port = activePort) {
     return new Promise((resolve, reject) => {
         const req = http.request(
-            { host: DAEMON_HOST, port: activePort, path: pathname, method: 'GET', timeout: timeoutMs },
+            { host: DAEMON_HOST, port, path: pathname, method: 'GET', timeout: timeoutMs },
             (res) => {
                 const chunks = [];
                 res.on('data', (c) => chunks.push(c));
@@ -257,32 +257,35 @@ const LEGACY_PORT = 7600;
  * exactly this reason; this is the same rule applied to the identity check.
  */
 function sameDataDir(a, b) {
+    // Physical identity: the same directory reached through a symlink
+    // (macOS /tmp -> /private/tmp) or with different letter case on a
+    // case-insensitive volume otherwise looked like a foreign daemon, and the
+    // client spawned a second one that could only exit again.
     const norm = (p) => {
-        const r = path.resolve(p);
+        let r;
+        try { r = fs.realpathSync.native(p); } catch (_) { r = path.resolve(p); }
         return process.platform === 'win32' ? r.toLowerCase() : r;
     };
     return norm(a) === norm(b);
 }
 
+// Probes a candidate port without touching the shared `activePort`: requests
+// already in flight read it, and a temporary switch sent them to the probed
+// (possibly foreign) daemon. Only a daemon that owns our data dir is adopted.
 async function probe(port, { viaPidfile = false } = {}) {
-    const previous = activePort;
-    activePort = port;
     try {
-        const { status, body } = await httpGet('/health', 800);
-        if (status !== 200) { activePort = previous; return 'dead'; }
+        const { status, body } = await httpGet('/health', 800, port);
+        if (status !== 200) return 'dead';
         const health = JSON.parse(body);
-        if (health.ok !== true) { activePort = previous; return 'dead'; }
+        if (health.ok !== true) return 'dead';
 
-        if (typeof health.dataDir === 'string') {
-            if (sameDataDir(health.dataDir, DATA_DIR)) return 'mine';
-            activePort = previous;
-            return 'foreign';
-        }
-        if (viaPidfile) return 'mine'; // legacy daemon reached through our own pidfile
-        activePort = previous;
-        return 'foreign';
+        const mine = typeof health.dataDir === 'string'
+            ? sameDataDir(health.dataDir, DATA_DIR)
+            : viaPidfile; // legacy daemon reached through our own pidfile
+        if (!mine) return 'foreign';
+        activePort = port;
+        return 'mine';
     } catch (_) {
-        activePort = previous;
         return 'dead';
     }
 }
@@ -895,16 +898,32 @@ async function stopDaemon({ timeoutMs = 20000 } = {}) {
     // the same port within milliseconds. The port stays busy; the daemon we were
     // asked to stop is nonetheless gone, and it checkpointed on the way out,
     // which is the entire point. So judge by pid.
+    // An unanswered /health is not proof either: the daemon stops answering
+    // while it still drains queries and checkpoints, holding the database and
+    // its instance marker. Reporting success then let the caller spawn a
+    // replacement that exited at once ("another daemon owns …"). Wait for the
+    // process itself to be gone.
+    const processGone = (pid) => {
+        if (pid == null) return true;
+        try { process.kill(pid, 0); return false; }
+        catch (e) { return e.code === 'ESRCH'; }
+    };
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
         const h = await askOnce('GET', '/health');
-        if (h.status !== 200) return { stopped: true, stoppedPid: targetPid };
+        if (h.status !== 200 && processGone(targetPid)) return { stopped: true, stoppedPid: targetPid };
         let pid = null;
         try { pid = JSON.parse(h.body).pid; } catch (_) { /* keep waiting */ }
         if (targetPid != null && pid != null && pid !== targetPid) {
             return { stopped: true, replacedBy: pid, stoppedPid: targetPid };
         }
         await new Promise((r) => setTimeout(r, 200));
+    }
+    if (!processGone(targetPid)) {
+        // shuttingDown: it accepted /shutdown and is still checkpointing. A kill
+        // now is exactly the WAL loss the clean stop exists to avoid.
+        return { stopped: false, targetPid, shuttingDown: shutdownRes.status === 200,
+            reason: `daemon (pid ${targetPid}) is still running after ${timeoutMs}ms; it finishes in-flight queries and checkpoints before exiting` };
     }
     return { stopped: false, targetPid, reason: `still responding on port ${port} after ${timeoutMs}ms` };
 }

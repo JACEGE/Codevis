@@ -1,12 +1,12 @@
 /** Best-effort MCP operation history; direct filesystem edits are outside its scope. */
 import { appendFileSync, mkdirSync, statSync, renameSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { ToolHandler, ServerContext, GraphDriver } from './graph.js';
 import { pickDbName } from './graph.js';
+import { projectRoot } from "./project-root.js";
 
-const PROJECT_ROOT = process.env.CODEVIS_PROJECT_DIR || resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const PROJECT_ROOT = projectRoot();
 const LOG_DIR = resolve(PROJECT_ROOT, '.claude/logs');
 const LOG_TO_GRAPH = process.env.LOG_TO_GRAPH === 'true';
 const MAX_LOG_BYTES = 100 * 1024 * 1024;

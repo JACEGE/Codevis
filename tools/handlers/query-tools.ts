@@ -97,6 +97,10 @@ const handlers: Record<string, ToolHandler> = {
                 record.keys.forEach(key => {
                     out[key] = record.get(key);
                 });
+                // collect() over an all-NULL OPTIONAL MATCH returns null, not []
+                // (see the Ladybug pitfalls in CLAUDE.md).
+                out.called_by = (out.called_by || []).filter((name: unknown) => name != null);
+                out.calls_to = (out.calls_to || []).filter((name: unknown) => name != null);
                 return out;
             });
 

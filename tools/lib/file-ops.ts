@@ -1,16 +1,14 @@
 import { readFileSync, readdirSync, rmSync, existsSync } from "fs";
 import { createHash } from "crypto";
-import { resolve, dirname } from "path";
-import { fileURLToPath } from "url";
+import { resolve } from "path";
 import { createRequire } from "node:module";
 import { assertFileScope } from "./scope-guard.js";
+import { projectRoot } from "./project-root.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 // ── Per-file mutex for concurrent edits (cross-process via mkdir) ────
 const fileMutexes = new Map<string, Promise<void>>();
-const projectDir = process.env.CODEVIS_PROJECT_DIR || resolve(__dirname, "../..");
+const projectDir = projectRoot();
 export const LOCK_DIR = resolve(projectDir, ".claude/filelocks");
 const { acquireDirectoryLock, STALE_LOCK_MS: staleLockMs } = createRequire(import.meta.url)('../../lib/directory-lock.cjs');
 const { resolvePhysicalPath } = createRequire(import.meta.url)('../../lib/file-publication.cjs');

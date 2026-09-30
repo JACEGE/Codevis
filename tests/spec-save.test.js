@@ -52,3 +52,17 @@ test('successful spec save publishes matching file content and removes temporary
     assert.equal(fs.readFileSync(options.filePath, 'utf8'), 'updated');
     assert.deepEqual(fs.readdirSync(path.dirname(options.filePath)).sort(), ['diagram.puml', 'locks']);
 });
+
+test('spec source files never resolve outside their root', () => {
+    const { firstContainedSpecFile } = require('../server/spec-save.cjs');
+    const root = path.resolve('/project');
+    const sibling = path.resolve('/sample-project');
+    const exists = { existsSync: () => true };
+    assert.equal(firstContainedSpecFile([root], 'docs/a.puml', exists), path.join(root, 'docs', 'a.puml'));
+    assert.equal(firstContainedSpecFile([root], '../other/x.puml', exists), null);
+    assert.equal(firstContainedSpecFile([root], path.resolve('/etc/x.puml'), exists), null);
+    assert.equal(firstContainedSpecFile([root], 'docs/../../x.puml', exists), null);
+    // Ein Geschwisterprojekt bleibt erreichbar, sobald es selbst eine Wurzel ist.
+    assert.equal(firstContainedSpecFile([root, sibling], '../sample-project/a.puml', exists),
+        path.join(sibling, 'a.puml'));
+});

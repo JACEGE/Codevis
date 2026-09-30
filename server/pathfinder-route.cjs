@@ -87,13 +87,17 @@ function findShortestRoutes(adjacency, startId, targetId, maxHops, maxPaths) {
                 shortest = nextDepth;
                 routes.push(next);
                 if (routes.length >= maxPaths) return routes;
-            } else {
+            } else if (shortest === null || nextDepth < shortest) {
+                // A state as deep as the shortest route can never lead to an
+                // equally short one; queueing it only burned the state budget.
                 queue.push(next);
             }
         }
     }
 
-    if (cursor >= MAX_SEARCH_STATES) {
+    // Breadth-first: routes already found are shortest routes, so hitting the
+    // state budget after finding one returns them instead of throwing them away.
+    if (cursor >= MAX_SEARCH_STATES && routes.length === 0) {
         throw routeError('SEARCH_LIMIT', `Route search exceeded ${MAX_SEARCH_STATES.toLocaleString()} states`, {
             visitedStates: cursor,
         });
