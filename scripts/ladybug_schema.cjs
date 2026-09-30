@@ -367,16 +367,14 @@ const REL_SPECS = {
   // aborted the whole build with "Table PUBLISHES_TOPIC does not exist". Every
   // ROS project failed to build, and the failure looked like a database problem
   // rather than a missing table declaration.
-  // `line`: where the publisher/subscription/server/client is created, so the
-  // dashboard can say not only which class but which line.
-  USES_TOPIC:         { props: "line INT64" },
-  PUBLISHES_TOPIC:    { props: "line INT64" },
-  SUBSCRIBES_TOPIC:   { props: "line INT64" },
+  USES_TOPIC:         {},
+  PUBLISHES_TOPIC:    {},
+  SUBSCRIBES_TOPIC:   {},
   // Services and actions, written by the same ROS extractor.
-  PROVIDES_SERVICE:   { props: "line INT64" },
-  CALLS_SERVICE:      { props: "line INT64" },
-  PROVIDES_ACTION:    { props: "line INT64" },
-  USES_ACTION:        { props: "line INT64" },
+  PROVIDES_SERVICE:   {},
+  CALLS_SERVICE:      {},
+  PROVIDES_ACTION:    {},
+  USES_ACTION:        {},
   HAS_CHILD:          {}, // RuntimeDOM -> RuntimeDOM
 
   // --- code <-> code WITH properties --------------------------------------

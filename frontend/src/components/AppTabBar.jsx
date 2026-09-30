@@ -15,46 +15,8 @@ export function useTabGroups({ activeTab, extractors, onSelect, tabs }) {
         const candidates = availableTabs.filter(tab => (tab.group || 'Views') === group);
         onSelect(candidates.find(tab => tab.key === remembered.current[group])?.key || candidates[0].key);
     };
-    const tabsOf = group => availableTabs.filter(tab => (tab.group || 'Views') === group);
-    const groupTabs = tabsOf(activeGroup);
-    return { groups, current, activeGroup, selectGroup, groupTabs, tabsOf, select: onSelect };
-}
-
-/**
- * The sections as one always-visible row. Each shows where you are
- * ("Work › Task board"); hovering or focusing a section opens its views
- * underneath, so every view is one move away without a second row.
- */
-export function AppSectionMenus({ nav, activeTab }) {
-    return (
-        <div className="app-nav-menus" role="menubar" aria-label="Dashboard sections">
-            {nav.groups.map(group => {
-                const active = nav.activeGroup === group;
-                return (
-                    <div key={group} className="app-nav-menu" data-group={group.toLowerCase()}>
-                        <button type="button" className="app-nav-section" aria-pressed={active} aria-haspopup="menu"
-                            title={groupDescriptions[group]} onClick={() => nav.selectGroup(group)}>
-                            <span className="app-nav-group-label">{group}</span>
-                            {active && nav.current && <span className="app-nav-current">› {nav.current.label}</span>}
-                            <span className="app-nav-caret" aria-hidden="true">▾</span>
-                        </button>
-                        <div className="app-nav-dropdown" role="menu" aria-label={group + ' views'}>
-                            <div className="app-nav-dropdown-title">{groupDescriptions[group]}</div>
-                            {nav.tabsOf(group).map(tab => (
-                                <button type="button" role="menuitem" key={tab.key}
-                                    className={'app-nav-item' + (activeTab === tab.key ? ' active' : '')}
-                                    aria-current={activeTab === tab.key ? 'page' : undefined}
-                                    onClick={() => { nav.select(tab.key); document.activeElement?.blur?.(); }}>
-                                    <strong>{tab.label}</strong>
-                                    {tab.description && <small>{tab.description}</small>}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                );
-            })}
-        </div>
-    );
+    const groupTabs = availableTabs.filter(tab => (tab.group || 'Views') === activeGroup);
+    return { groups, current, activeGroup, selectGroup, groupTabs };
 }
 
 export function ThemeToggle() {

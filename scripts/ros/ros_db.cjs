@@ -133,7 +133,7 @@ async function readRosModel(session, opts = {}) {
             MATCH (src)-[r:${relType}]->(t:${label})
             RETURN src.label AS srcLabel, src.name AS srcName, src.file AS srcFile,
                    src.path AS srcPath, src.uid AS srcUid, src.isRosNode AS srcIsRosNode,
-                   t.name AS iface, r.msgType AS msgType, r.callback AS callback, r.line AS line
+                   t.name AS iface, r.msgType AS msgType, r.callback AS callback
         `);
         for (const r of res.records) {
             const srcLabel = val(r, "srcLabel");
@@ -199,10 +199,6 @@ async function readRosModel(session, opts = {}) {
                 // it was simply dropped when the edge was folded onto its owning
                 // class.
                 viaFunction: srcLabel === "Function" ? srcName : null,
-                // Where it is written: the file, and the line of the call that
-                // creates the publisher/subscription/server/client.
-                file: srcFile,
-                line: val(r, "line") == null ? null : Number(val(r, "line")),
             });
         }
     }
@@ -222,18 +218,14 @@ async function readRosModel(session, opts = {}) {
     // the ownership, the function-level twin carries the method name — dropping
     // one without the other threw away half the information about the same call
     // site.
-    // Keyed by the call site (file and line), not by interface alone: a Python
-    // and a C++ node on the same topic were otherwise credited with each
-    // other's method.
-    const callSite = (e) => `${e.iface}|${e.relType}|${e.file}|${e.line}`;
     const methodByCall = new Map();
     for (const e of edges) {
         if (!e.viaFunction) continue;
-        methodByCall.set(callSite(e), e.viaFunction);
+        methodByCall.set(`${e.iface}|${e.relType}`, e.viaFunction);
     }
     for (const e of edges) {
         if (e.viaFunction) continue;
-        const via = methodByCall.get(callSite(e));
+        const via = methodByCall.get(`${e.iface}|${e.relType}`);
         if (via) e.viaFunction = via;
     }
 

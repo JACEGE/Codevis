@@ -5269,8 +5269,6 @@ async function extractRosInterfaces(session, cached, tree, relativePath, funcBou
   /** Write one interface node + the edge(s) from its owner. */
   const record = async (info, startIndex) => {
     const { label, relType, name, dynamic, msgType, callback } = info;
-    // The line of the call that creates the publisher/subscription/server/client.
-    const line = ladybug.int(tree.rootNode.descendantForIndex(startIndex).startPosition.row + 1);
 
     await session.run(
       `MERGE (t:${label} {name: $name})
@@ -5300,8 +5298,8 @@ async function extractRosInterfaces(session, cached, tree, relativePath, funcBou
         MATCH (t:${label} {name: $name})
         MATCH (f:Function {name: $funcName, file: $path, owner: $funcOwner})
         MERGE (f)-[r:${relType}]->(t)
-        SET r.msgType = $msgType, r.callback = $callback, r.line = $line
-      `, { name, funcName: enclosingFunc, funcOwner: enclosingOwner, path: relativePath, msgType: msgType || null, callback: callback || null, line });
+        SET r.msgType = $msgType, r.callback = $callback
+      `, { name, funcName: enclosingFunc, funcOwner: enclosingOwner, path: relativePath, msgType: msgType || null, callback: callback || null });
     }
 
     if (enclosingClass) {
@@ -5309,8 +5307,8 @@ async function extractRosInterfaces(session, cached, tree, relativePath, funcBou
         MATCH (t:${label} {name: $name})
         MATCH (c:Class {name: $className, file: $path})
         MERGE (c)-[r:${relType}]->(t)
-        SET r.msgType = $msgType, r.callback = $callback, r.line = $line
-      `, { name, className: enclosingClass, path: relativePath, msgType: msgType || null, callback: callback || null, line });
+        SET r.msgType = $msgType, r.callback = $callback
+      `, { name, className: enclosingClass, path: relativePath, msgType: msgType || null, callback: callback || null });
     }
 
     if (!enclosingFunc && !enclosingClass) {
@@ -5318,8 +5316,8 @@ async function extractRosInterfaces(session, cached, tree, relativePath, funcBou
         MATCH (t:${label} {name: $name})
         MATCH (file:File {path: $path})
         MERGE (file)-[r:${relType}]->(t)
-        SET r.msgType = $msgType, r.callback = $callback, r.line = $line
-      `, { name, path: relativePath, msgType: msgType || null, callback: callback || null, line });
+        SET r.msgType = $msgType, r.callback = $callback
+      `, { name, path: relativePath, msgType: msgType || null, callback: callback || null });
     }
   };
 
