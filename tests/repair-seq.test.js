@@ -27,8 +27,7 @@ test("seq repair changes only colliding nodes and reports progress in English", 
     const changed = await repairSeq(db.session, options);
     assert.equal(changed, 1, "one of the two colliding nodes may keep seq=7");
     assert.ok(logs.every(message => !/verschiedene|Knoten|nummerier/i.test(message)));
-    assert.match(logs.join("\n"), /distinct values.*repairing collisions/i);
-    assert.match(logs.join("\n"), /repaired 1 collision/i);
+    assert.match(logs.join("\n"), /renumbered 1 batch-shared display number.*identity is unaffected/i);
 
     const result = await db.session.run(
       `MATCH (n:Function) RETURN n.name AS name, n.seq AS seq ORDER BY name`,

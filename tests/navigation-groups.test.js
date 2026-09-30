@@ -21,3 +21,15 @@ test('tab registry uses the four product groups and avoids mixed emoji labels', 
   }
   assert.doesNotMatch(app.slice(app.indexOf('const TABS = ['), app.indexOf('];', app.indexOf('const TABS = ['))), /[📋🧩🔍🧭🔭🧠📐🤖📚📖⚙]/u);
 });
+
+test('workspace header is two rows, collapsible with Ctrl+. and auto-hides in Full view', () => {
+  const header = fs.readFileSync(path.join(root, 'frontend/src/components/WorkspaceHeader.jsx'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'frontend/src/demo-theme.css'), 'utf8');
+  assert.match(header, /<AppSections nav=\{nav\} compact \/>/, 'sections share the top row, subtitles as tooltips');
+  assert.match(header, /<AppViewTabs[^>]+compact \/>/, 'view description moves into the tooltip');
+  assert.match(header, /codevis\.header\.collapsed/, 'collapsed state is remembered');
+  assert.match(header, /event\.key === '\.'/, 'Ctrl+. toggles');
+  assert.match(header, /className="workspace-breadcrumb"/, 'collapsed row shows a breadcrumb');
+  assert.match(header, /layout === 'panel'/, 'Full view auto-hides the header');
+  assert.match(css, /\.workspace-header--autohide:has\(:focus-visible\)/, 'keyboard focus reveals it; a mouse click does not pin it open');
+});

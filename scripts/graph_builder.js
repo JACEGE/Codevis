@@ -2118,8 +2118,29 @@ const LUA_LANG_CONFIG = {
 // ordinary Android manifests. HTML uses the same element/attribute model and
 // parses XML-compatible Android resources losslessly, so it is the safer parser
 // until the upstream XML artifact is fixed.
+/**
+ * XML is parsed with the HTML grammar (the bundled XML grammar crashes this
+ * web-tree-sitter build). HTML has no processing instructions, doctype
+ * internals or CDATA, so `<?xml version="1.0"?>`, the first line of nearly
+ * every XML file, turned package.xml, launch files and URDFs into parse
+ * errors. Blank them out with spaces of the same length: offsets and line
+ * numbers stay exactly where they were.
+ */
+function maskXmlProlog(source) {
+  const blank = (match) => match.replace(/[^\n]/g, ' ');
+  return String(source)
+    .replace(/<\?[\s\S]*?\?>/g, blank)
+    .replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, blank)
+    .replace(/<!DOCTYPE(?:[^[>]|\[[\s\S]*?\])*>/gi, blank)
+    // The HTML grammar ends a tag name at `_`: every <exec_depend>,
+    // <build_type>, <joint_limits> became a mismatched tag. '-' is the same
+    // length and legal in both tags; previews read the original text.
+    .replace(/<\/?[A-Za-z][^\s/>]*/g, (tag) => tag.replace(/_/g, '-'));
+}
+
 const XML_LANG_CONFIG = {
   wasm: '../node_modules/tree-sitter-wasm/out/html/tree-sitter-html.wasm',
+  preprocess: maskXmlProlog,
   funcQuery: null,
   callQuery: null,
   astQuery: `
@@ -2929,11 +2950,15 @@ async function assignIpv6Addresses(session, projectId) {
     );
     totalAssigned++;
 
-    // Get all contained nodes with line info + UID
+    // Get all contained nodes with line info + UID. `nid` is the uid, not
+    // id(n): id(n) is seq, and every node written in the same UNWIND batch
+    // shares one until repairSeq runs (after this). Siblings with equal seq
+    // looked like the same node, so a member sharing its class's seq was
+    // treated as top-level and addressed outside the class.
     const nodesResult = await session.run(
       `MATCH (f:File {path: $path})-[:CONTAINS]->(n)
        WHERE n.startLine IS NOT NULL AND n.uid IS NOT NULL
-       RETURN id(n) AS nid, labels(n) AS labels, n.name AS name, n.uid AS uid,
+       RETURN n.uid AS nid, labels(n) AS labels, n.name AS name, n.uid AS uid,
               n.startLine AS startLine, n.endLine AS endLine
        ORDER BY n.startLine`,
       { path: filePath }
@@ -5844,6 +5869,7 @@ async function extractAllVariables(session, cached, tree, relativePath, funcBoun
   const matches = cached.variableQuery.matches(tree.rootNode);
 
   const seen = new Set();
+  const rows = [];
   for (const match of matches) {
     for (const capture of match.captures) {
       const isParam = capture.name === 'param_name';
@@ -5879,42 +5905,54 @@ async function extractAllVariables(session, cached, tree, relativePath, funcBoun
       if (seen.has(dedupe)) continue;
       seen.add(dedupe);
 
-      const uid = makeUid('Variable', elementId, relativePath);
-
-      const declaredType = readDeclaredType(capture.node);
-
-      await session.run(`
-        MERGE (v:Variable {elementId: $elementId, file: $path})
-        SET v.name = $name,
-            v.scope = $scope,
-            v.startLine = $startLine,
-            v.declaredType = $declaredType,
-            v.uid = $uid
-      `, {
-        elementId, path: relativePath, name, scope,
-        startLine: ladybug.int(startLine), declaredType, uid
+      rows.push({
+        elementId, name, scope, startLine: ladybug.int(startLine),
+        declaredType: readDeclaredType(capture.node), uid: makeUid('Variable', elementId, relativePath),
+        owner: belongsToClass ? 'class' : enclosingFunc ? 'function' : 'file',
+        className: enclosingClass || null, funcName: enclosingFunc, funcOwner: enclosingOwner,
       });
-
-      if (belongsToClass) {
-        await session.run(`
-          MATCH (v:Variable {elementId: $elementId, file: $path})
-          MATCH (cls:Class {name: $className, file: $path})
-          MERGE (cls)-[:DECLARES]->(v)
-        `, { elementId, path: relativePath, className: enclosingClass });
-      } else if (enclosingFunc) {
-        await session.run(`
-          MATCH (v:Variable {elementId: $elementId, file: $path})
-          MATCH (fn:Function {name: $funcName, file: $path, owner: $funcOwner})
-          MERGE (fn)-[:DECLARES]->(v)
-        `, { elementId, path: relativePath, funcName: enclosingFunc, funcOwner: enclosingOwner });
-      } else {
-        await session.run(`
-          MATCH (v:Variable {elementId: $elementId, file: $path})
-          MATCH (f:File {path: $path})
-          MERGE (f)-[:DECLARES]->(v)
-        `, { elementId, path: relativePath });
-      }
     }
+  }
+
+  // Batched per file: this used to be two daemon round trips per variable,
+  // the largest single cost of an incremental build (300 queries for six
+  // files). Same MERGE/SET pattern as extractAST.
+  const CHUNK = 500;
+  const chunks = (list) => { const out = []; for (let i = 0; i < list.length; i += CHUNK) out.push(list.slice(i, i + CHUNK)); return out; };
+  for (const slice of chunks(rows)) {
+    await session.run(`
+      UNWIND $rows AS row
+      MERGE (v:Variable {elementId: row.elementId, file: $path})
+      SET v.name = row.name,
+          v.scope = row.scope,
+          v.startLine = row.startLine,
+          v.declaredType = row.declaredType,
+          v.uid = row.uid
+    `, { path: relativePath, rows: slice.map(({ elementId, name, scope, startLine, declaredType, uid }) => ({ elementId, name, scope, startLine, declaredType, uid })) });
+  }
+  for (const slice of chunks(rows.filter(r => r.owner === 'class'))) {
+    await session.run(`
+      UNWIND $rows AS row
+      MATCH (v:Variable {elementId: row.elementId, file: $path})
+      MATCH (cls:Class {name: row.className, file: $path})
+      MERGE (cls)-[:DECLARES]->(v)
+    `, { path: relativePath, rows: slice.map(r => ({ elementId: r.elementId, className: r.className })) });
+  }
+  for (const slice of chunks(rows.filter(r => r.owner === 'function'))) {
+    await session.run(`
+      UNWIND $rows AS row
+      MATCH (v:Variable {elementId: row.elementId, file: $path})
+      MATCH (fn:Function {name: row.funcName, file: $path, owner: row.funcOwner})
+      MERGE (fn)-[:DECLARES]->(v)
+    `, { path: relativePath, rows: slice.map(r => ({ elementId: r.elementId, funcName: r.funcName, funcOwner: r.funcOwner })) });
+  }
+  for (const slice of chunks(rows.filter(r => r.owner === 'file'))) {
+    await session.run(`
+      UNWIND $rows AS row
+      MATCH (v:Variable {elementId: row.elementId, file: $path})
+      MATCH (f:File {path: $path})
+      MERGE (f)-[:DECLARES]->(v)
+    `, { path: relativePath, rows: slice.map(r => ({ elementId: r.elementId })) });
   }
 }
 
@@ -5939,7 +5977,8 @@ async function extractAST(session, cached, tree, relativePath, funcBounds) {
       const enclosingBound = findEnclosingFunctionBound(funcBounds, node.startIndex);
       const enclosingFunc = enclosingBound ? enclosingBound.name : null;
       const enclosingOwner = enclosingBound ? (enclosingBound.owner || '') : '';
-      let preview = node.text.replace(/\s+/g, ' ').substring(0, 120);
+      const text = tree.originalSource != null ? tree.originalSource.slice(node.startIndex, node.endIndex) : node.text;
+      let preview = text.replace(/\s+/g, ' ').substring(0, 120);
 
       let value = null;
       if (label === 'StringLiteral') {
@@ -7201,7 +7240,9 @@ async function parseFiles(session, files, baseDir, allRelativePaths, langCache, 
     const cached = langCache[ext];
     parser.setLanguage(cached.lang);
 
-    const tree = parseSource(parser, content, relativePath);
+    const tree = parseSource(parser, langConfig.preprocess ? langConfig.preprocess(content) : content, relativePath);
+    // Same length as what was parsed, so node offsets index it directly.
+    if (langConfig.preprocess) tree.originalSource = content;
     const parseStatus = tree.rootNode.hasError ? 'parse_error' : 'current';
 
     // ceil: mtimeMs is a float; the INT64 column rounds it on store, and a
@@ -7384,20 +7425,32 @@ async function main() {
   const journalPath = `${dbPath}.rebuild-recovery.json`;
   const { readJournal, writeJournal } = require('../lib/rebuild-journal.cjs');
   const pendingRecovery = readJournal(journalPath);
+  // A database that belongs to another project must never be built into. A
+  // changed source list or a moved project folder is ordinary life: the code
+  // graph is rebuilt in full, and Tasks, Flows, Knowledge and authored links
+  // survive it (PRESERVED_LABELS, rebuild journal). The old advice for both was
+  // "move the database aside", which threw exactly those away.
+  if (fs.existsSync(dbPath) && identity.change === 'foreign') {
+    throw new Error(
+      `The '${publicWorkspaceName(targetName)}' database in ${paths.DATA_DIR} belongs to another project.\n` +
+      `  recorded: ${identity.recorded.projectRoot} ${JSON.stringify(identity.recorded.sourceDirs || [])}\n` +
+      `  current : ${identity.expected.projectRoot} ${JSON.stringify(identity.expected.sourceDirs)}\n` +
+      `Point CODEVIS_DATA_DIR at this project's own data directory (default: <project>/.codevis). Nothing was changed.`
+    );
+  }
   if (pendingRecovery) {
-    if (pendingRecovery.identity !== identity.expected.fingerprint) {
-      throw new Error('Pending rebuild recovery belongs to different sources. Restore the previous sourceDir before retrying.');
+    if (pendingRecovery.identity !== identity.expected.fingerprint && identity.change === 'foreign') {
+      throw new Error('Pending rebuild recovery belongs to another project. Nothing was changed.');
     }
     isDiffMode = false;
     console.warn('[recovery] Completing interrupted full rebuild; authored links will be restored from disk.');
   }
-  if (fs.existsSync(dbPath) && identity.mismatch) {
-    throw new Error(
-      `Workspace identity mismatch for '${publicWorkspaceName(targetName)}'.\n` +
-      `  recorded sources: ${JSON.stringify(identity.recorded.sourceDirs || [])}\n` +
-      `  current sources : ${JSON.stringify(identity.expected.sourceDirs)}\n` +
-      `Move the existing database aside or restore the previous sourceDir before building.`
-    );
+  if (fs.existsSync(dbPath) && identity.change) {
+    const was = identity.change === 'sources' ? JSON.stringify(identity.recorded.sourceDirs || []) : identity.recorded.projectRoot;
+    const now = identity.change === 'sources' ? JSON.stringify(identity.expected.sourceDirs) : identity.expected.projectRoot;
+    console.warn(`[identity] ${identity.change === 'sources' ? 'Source folders changed' : 'Project moved'}: ${was} -> ${now}.`);
+    if (isDiffMode) console.warn('[identity] Rebuilding the code graph in full; Tasks, Flows, Knowledge and authored links are kept.');
+    isDiffMode = false;
   }
   if (fs.existsSync(dbPath) && !identity.recorded) {
     console.warn(`[identity] Existing '${publicWorkspaceName(targetName)}' database has no workspace marker; this successful build will adopt it.`);
@@ -7736,6 +7789,7 @@ module.exports = {
   // matches and no error — the extractor just quietly does nothing. Only
   // compiling and running them against real code catches that.
   __testing__: {
+    assignIpv6Addresses,
     getMtimeChangedFiles,
     backupFileLinks,
     getDirectDependentFiles,

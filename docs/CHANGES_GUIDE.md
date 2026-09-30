@@ -65,14 +65,24 @@ and inspect its relationships; hover an edge to read its direction and type.
 Shape identifies the entity type. Workflow status colors distinguish pending, active and completed phases; status text remains explicit. Existing lock colors still take precedence. These
 are persisted graph types, not copies of source symbols. Existing Task diamonds, Knowledge cylinders, Spec tetrahedra and Epic wireframes retain their meanings. The database stores:
 
-- Flow → HAS_PHASE → Phase
-- Flow → HAS_REQUIREMENT → Requirement
-- Requirement → HAS_CRITERION → AcceptanceCriterion
-- Requirement or criterion → VALIDATED_BY → TestCase
-- TestCase → IMPLEMENTED_BY → existing test source
-- TestCase → VALIDATES → existing production source
-- Task → IMPLEMENTS → Requirement or TestCase
-- Task → AFFECTS → source; Phase → IMPACTS → predicted source
+Relationships an agent authors in a phase submission (`links`), and the phase
+that accepts each. The phase instructions return the same list as
+`allowedLinks`; external endpoints are `{nodeId}`, which accepts an elementId or
+a Task `taskId` / Epic ID as the Task tools return it.
+
+| Relationship | From → To | Phase |
+|---|---|---|
+| HAS_REQUIREMENT | Flow → Requirement | Requirements |
+| HAS_CRITERION | Requirement → AcceptanceCriterion | Requirements |
+| VALIDATED_BY | Requirement or AcceptanceCriterion → TestCase | Requirements, Analysis |
+| IMPACTS | `analysis` (the Phase ID) → predicted source | Analysis |
+| IMPLEMENTS | Task → Requirement or TestCase | Planning |
+| IMPLEMENTED_BY | TestCase → test File or Function | Development |
+| VALIDATES | TestCase → production source | Development |
+| REFERENCES | Phase, Flow or ArchitectureDecision → Task, Epic, Knowledge, Spec diagram or source | any |
+
+Flow → HAS_PHASE → Phase is created with the Flow. Task → AFFECTS → source is the
+Task's own scope (create_task / plan_task_scope), not a Flow link.
 
 SourceAnalysis is projected from its recorded analysis submission. Major decisions may use ArchitectureDecision nodes; existing decision Knowledge can also be referenced without copying it. Role and agent history are stored in the Phase node.
 

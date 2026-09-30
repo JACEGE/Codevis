@@ -8,7 +8,9 @@ const QUERY_FIELDS = Object.freeze([
     "controlFlowQuery", "statementQuery", "variableQuery", "astQuery", "attributeTypeQuery", "moduleAliasQuery",
     "decoratorQuery", "typeRefQuery", "rosTopicQuery", "rosInterfaceQuery", "rosNodeNameQuery",
 ]);
-const ALLOWED_FIELDS = new Set(["wasm", "rosLang", ...QUERY_FIELDS]);
+// preprocess(source) → source of the same length, applied before parsing only
+// (e.g. XML: blank out what the HTML grammar cannot read).
+const ALLOWED_FIELDS = new Set(["wasm", "rosLang", "preprocess", ...QUERY_FIELDS]);
 
 function describeExtractor(extension, config) {
     const capabilities = {};
@@ -27,6 +29,7 @@ function validateExtractorConfig(extension, config) {
     for (const [key, value] of Object.entries(config)) {
         if (!ALLOWED_FIELDS.has(key)) errors.push(`unknown field '${key}'`);
         else if (QUERY_FIELDS.includes(key) && value != null && typeof value !== "string") errors.push(`${key} must be a string or null`);
+        else if (key === "preprocess" && value != null && typeof value !== "function") errors.push("preprocess must be a function or null");
     }
     return errors.map((error) => `${extension}: ${error}`);
 }

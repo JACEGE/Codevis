@@ -279,3 +279,26 @@ test('TOUCHED records who changed what and when, and whether the task created it
         { name: 'renewLimit', agentId: 'worker-a', change: 'modified', firstAt: firstEdit, at: firstEdit },
     ]);
 });
+
+test('with locking off, planned files are still recorded and plan_task_scope works', async t => {
+    const h = await fixture(t);
+    await h.session.run("MATCH (t:Task {taskId:'task'}) SET t.status='todo'");
+    fs.writeFileSync(path.join(h.root, 'existing.js'), 'export const a = 1;\n');
+    const created = await h.run('create_task', {
+        title: 'Build the launcher plugin loader',
+        description: 'Load launcher plugins from the configured directory and register them with the physics engine.',
+        workInstructions: 'Create loader.py with discovery and registration, then add tests for missing and duplicate plugins.',
+        files: ['src/new_loader.py'],
+    });
+    assert.equal(created.status, 'OK');
+    assert.equal(created.locking, 'disabled');
+    assert.deepEqual(created.files, ['src/new_loader.py'], 'a file that does not exist yet is the plan');
+    assert.match(created.note, /recorded for planning and sync, not locked/);
+    const planned = await h.run('plan_task_scope', { taskId: 'task', files: ['existing.js'] });
+    assert.equal(planned.status, 'OK');
+    const reserved = await h.session.run("MATCH (:Task {taskId:'task'})-[:RESERVES]->(s) RETURN s.file AS f");
+    assert.deepEqual(reserved.records.map(r => r.get('f')), ['existing.js']);
+    // Nothing was locked.
+    const locked = await h.session.run('MATCH (n) WHERE n.locked = true RETURN count(n) AS c');
+    assert.equal(Number(locked.records[0].get('c')), 0);
+});

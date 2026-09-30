@@ -188,10 +188,11 @@ async function taskClaimOperation(session, options, root) {
                     MERGE (k)-[:APPLIES_TO]->(t) RETURN k.name AS name`, { taskId, name });
                 knowledgeLinked += linked.records.length;
             }
-            let scope = { nodes: new Map(), files: new Set() };
             let claim = { status: 'OK', activatedCount: 0 };
+            const ids = new Set(originIds);
             if (enabled) {
-                const ids = new Set(originIds);
+                // The lock radius only widens what gets locked; without locking
+                // there is nothing to widen.
                 const depth = require('../tools/lib/lock-depth.cjs').normalizeDepth(options.lockRadius ?? options.lockDepth, 0);
                 const edges = options.lockEdgeTypes || ['CALLS'];
                 if (!Array.isArray(edges) || !edges.length || edges.some(e => typeof e !== 'string' || !/^[A-Z_]+$/.test(e) || e === 'RESERVES')) throw new Error('Invalid lock edge types.');
@@ -202,23 +203,30 @@ async function taskClaimOperation(session, options, root) {
                         RETURN DISTINCT elementId(other) AS id`, { id });
                     found.records.forEach(r => ids.add(r.get('id')));
                 }
-                // Explicit files take precedence over inferred impact. Old node
-                // and subnet requests conservatively become whole-file claims.
-                scope = await targets(session, taskId, options.files?.length
-                    ? { files: options.files } : { nodeIds: [...ids] }, root);
-                await reserve(session, taskId, scope);
-                if (initialStatus === 'in_progress' && scopeMode !== 'open') claim = await acquire(session, taskId, agentId, scope, root, now, ttlMs);
             }
+            // The planned scope is recorded whether or not locking is on: it is
+            // what sync_task, wave planning and "planned vs actual" read, and
+            // for code that does not exist yet the files are the only plan.
+            // Only acquiring locks depends on locking. Explicit files take
+            // precedence over inferred impact; node requests become whole files.
+            const scope = await targets(session, taskId, options.files?.length
+                ? { files: options.files } : { nodeIds: [...ids] }, root);
+            await reserve(session, taskId, scope);
+            if (enabled && initialStatus === 'in_progress' && scopeMode !== 'open') claim = await acquire(session, taskId, agentId, scope, root, now, ttlMs);
             const status = claim.status === 'OK' ? initialStatus : 'backlog';
             await session.run(`MATCH (t:Task {taskId:$taskId}) SET t.status=$status,
                 t.assignedTo=$owner, t.claimedAt=$claimedAt,t.activeScopeMode=$activeMode`, { taskId, status,
                 activeMode: status === 'in_progress' ? (scopeMode === 'inherit' ? 'flexible' : scopeMode) : null,
                 owner: status === 'in_progress' ? agentId : null, claimedAt: status === 'in_progress' ? now : null });
-            return { status: 'OK', taskId, title: options.title, priority: options.priority || 'medium',
+            // nodeId is the elementId graph queries and Flow links use; taskId is
+            // what the Task tools take. Returning both saves a lookup.
+            const node = await session.run('MATCH (t:Task {taskId:$taskId}) RETURN elementId(t) AS id', { taskId });
+            return { status: 'OK', taskId, nodeId: node.records[0]?.get('id') ?? null, title: options.title, priority: options.priority || 'medium',
                 locking: enabled ? 'enabled' : 'disabled', files: [...scope.files],
                 plannedNodes: scope.files.size + scope.nodes.size, activatedLocks: claim.activatedCount || 0,
                 knowledgeLinked, lockConflict: claim.status === 'OK' ? undefined : claim,
-                note: status === 'backlog' && claim.status !== 'OK' ? 'Created in backlog; scope conflict prevented activation.' : 'Task scope is planned until work starts.' };
+                note: status === 'backlog' && claim.status !== 'OK' ? 'Created in backlog; scope conflict prevented activation.'
+                    : enabled ? 'Task scope is planned until work starts.' : 'Locking is off: the scope is recorded for planning and sync, not locked.' };
         }
         if (operation === 'acquire') {
             if (!enabled) return { status: 'LOCKING_DISABLED' };
@@ -259,7 +267,8 @@ async function taskClaimOperation(session, options, root) {
         }
         if (operation === 'plan' || operation === 'expand') {
             if (operation === 'expand' && policy.effectiveMode === 'strict') return { status: 'SCOPE_FIXED', message: 'Strict mode does not allow scope expansion. Checkpoint and return the task to To Do before replanning.' };
-            if (!enabled) return { status: 'LOCKING_DISABLED', taskId };
+            // Planning only records scope; expanding an active task acquires it.
+            if (operation === 'expand' && !enabled) return { status: 'LOCKING_DISABLED', taskId };
             if (operation === 'plan' && !PENDING.has(task.status)) return { status: 'INVALID_STATE', message: 'Plan scope before claiming; use expand_task_scope for active work.' };
             if (operation === 'expand' && (!ACTIVE.has(task.status) || task.assignedTo !== agentId)) {
                 return { status: 'NOT_OWNER', taskId, assignedTo: task.assignedTo };

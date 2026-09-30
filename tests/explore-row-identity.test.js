@@ -83,3 +83,17 @@ test('rowIpv6s liefert uids und ipv6 zusammen', async () => {
     assert.equal(both.length, 2);
     assert.equal(both[0], 'task:259', 'uids stehen vorn');
 });
+
+test('ganze Knoten aus RETURN n werden erkannt und lesbar angezeigt', async () => {
+    const { rowKeys, describeValue } = await load();
+    const f = { _id: { offset: 1, table: 0 }, _label: 'CodeNode', uid: 'Function||name=mul||file=a.js', label: 'Function', name: 'mul', ipv6: 'fd00:0001:aaaa:bbbb:0000:0000:0000:0000' };
+    const g = { _id: { offset: 2, table: 0 }, _label: 'CodeNode', uid: 'Function||name=add||file=a.js', label: 'Function', name: 'add' };
+    const r = { _src: f._id, _dst: g._id, _label: 'CALLS', resolvedBy: 'same-file' };
+    const { uids } = rowKeys({ f, r, g });
+    assert.deepEqual(uids, [f.uid, g.uid]);
+    assert.equal(describeValue(f), 'Function: mul');
+    assert.equal(describeValue(r), '[:CALLS]');
+    assert.equal(describeValue([f, g]), 'Function: mul, Function: add');
+    assert.equal(describeValue({ a: 1 }), '{"a":1}');
+    assert.equal(describeValue(['x', 'y']), 'x, y');
+});

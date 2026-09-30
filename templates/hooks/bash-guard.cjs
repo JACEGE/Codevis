@@ -119,10 +119,10 @@ process.stdin.on('end', () => {
     }
 });
 
+// No decision: exit quietly so Claude Code applies the user's own permission
+// rules. Printing permissionDecision "allow" here skipped the permission prompt,
+// so with locking off every Bash command and Edit/Write ran without asking.
 function allow() {
-    console.log(JSON.stringify({
-        hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" }
-    }));
     process.exit(0);
 }
 

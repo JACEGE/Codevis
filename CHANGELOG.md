@@ -4,7 +4,18 @@ All notable changes to CodeVis are documented here.
 
 ## Unreleased
 
-No changes yet.
+- Security: the lock-guard and bash-guard PreToolUse hooks no longer answer
+  `permissionDecision: "allow"` when they have nothing to block. That answer
+  made Claude Code skip its permission prompt, so in a default setup (locking
+  off, no agent id) every Bash command and Edit/Write ran without asking. The
+  hooks now exit silently and leave the decision to the user's own rules.
+  Re-run `codevis init` in existing projects to update the copied hooks.
+- Explore shows whole nodes and relationships (`RETURN f, r, g`) as readable
+  cells and puts them on the query graph; they appeared as `[object Object]`
+  and were all reported as not representable.
+- Settings disables the CodeVis database switch when no `codevis_db` workspace
+  is configured (`/api/status` now reports `availableWorkspaces`); a refused
+  switch names public workspace names instead of internal aliases.
 
 ## 1.0.0-beta.4 - 2026-09-12
 

@@ -277,11 +277,21 @@ function createDriver(dbKey) {
     return ladybug.workspace(dbKey);
 }
 
+// Public names of the configured workspaces. config.workspaces also carries the
+// internal aliases (`target`, `meta`), which must not leak into messages or UI.
+function availableWorkspaceNames() {
+    const names = new Set();
+    for (const key of Object.keys(config.workspaces)) {
+        try { names.add(publicWorkspaceName(key)); } catch (_) { /* not a workspace name */ }
+    }
+    return [...names];
+}
+
 async function switchDb(dbKey) {
     dbKey = normalizeWorkspaceName(dbKey, activeDb);
     const validKeys = Object.keys(config.workspaces);
     if (!validKeys.includes(dbKey)) {
-        throw new Error(`Invalid db key: ${dbKey}. Must be one of: ${validKeys.join(', ')}.`);
+        throw new Error(`Workspace '${publicWorkspaceName(dbKey)}' is not configured. Available: ${availableWorkspaceNames().join(', ')}.`);
     }
     // Repoint the active driver to the shared per-workspace driver. Do NOT close
     // the previous one: loadGraphData/expandNode may hold an in-flight session on
@@ -1978,6 +1988,7 @@ app.get('/api/status', (req, res) => {
         // -- vorher musste sie es raten und bekam im Fehlerfall eine Meldung
         // über eine Umgebungsvariable, mit der ein Benutzer nichts anfangen kann.
         metaUnlockRequired: Boolean(META_UNLOCK_SECRET),
+        availableWorkspaces: availableWorkspaceNames(),
         limits,
         // Die geladene Detailstufe. Sie bestimmt, wie viele Knoten überhaupt
         // ladbar sind — wer den scope-Bericht hier abholt, braucht sie dazu,

@@ -1,6 +1,9 @@
 import {focusPositions} from './navigation.js';
 
-export function changeGraphModel(detail, { expanded = new Set(), focus = null, showSource = false, incomplete = false, quality = null } = {}) {
+// Whole-flow layout: one column per phase, its direct content stacked below.
+const WHOLE_COLUMN = 300, WHOLE_ROW = 200, WHOLE_MAX_ROWS = 6;
+
+export function changeGraphModel(detail, { expanded = new Set(), focus = null, showSource = false, incomplete = false, quality = null, whole = false } = {}) {
   if (!detail?.state || !detail?.graph) return {nodes:[],edges:[],allNodes:[],allLinks:[],children:{}};
   const { state,graph } = detail;
   const phaseOrder=state.phases.map(p=>p.id);
@@ -73,13 +76,39 @@ export function changeGraphModel(detail, { expanded = new Set(), focus = null, s
     }
     const layout=focusPositions(layers);
     for(const layer of layers.values())for(const n of layer){visible.add(n.id);positions.set(n.id,layout.get(n.id));}
+  } else if(whole) {
+    // Every phase side by side, each with what belongs to it. A Task is linked
+    // to both Planning and Development; it is shown once, where it is built.
+    const root=nodes.find(n=>['Change','Flow'].includes(n.label));
+    if(root){visible.add(root.id);positions.set(root.id,{x:-WHOLE_COLUMN,y:0});}
+    // A long phase (a dozen requirements) wraps into sub-columns after
+    // WHOLE_MAX_ROWS, so the whole flow fits on screen at a readable zoom.
+    const hasDevelopment=Boolean(phase('development'));
+    let x=0;
+    for(const key of phaseOrder){
+      const p=phase(key);if(!p)continue;
+      visible.add(p.id);positions.set(p.id,{x,y:0});
+      let count=0;
+      for(const id of children[p.id]||[]){
+        const n=map.get(id);
+        if(!n||visible.has(id)||(!showSource&&n.source)||incomplete&&['done','complete'].includes(n.status))continue;
+        if(key==='planning'&&hasDevelopment&&n.label==='Task')continue;
+        visible.add(id);positions.set(id,{x:x+Math.floor(count/WHOLE_MAX_ROWS)*WHOLE_COLUMN,y:(count%WHOLE_MAX_ROWS+1)*WHOLE_ROW});
+        count++;
+      }
+      x+=Math.max(1,Math.ceil(count/WHOLE_MAX_ROWS))*WHOLE_COLUMN;
+    }
   } else {
     const root=nodes.find(n=>['Change','Flow'].includes(n.label));if(root)walk(root.id,0);
     for(const key of phaseOrder) {const p=phase(key);if(p)walk(p.id,0);}
   }
-  const displayedLinks=links.filter(l=>visible.has(l.from)&&visible.has(l.to)&&l.type!=='HAS_PHASE');
+  const wholeLayout=whole&&!(focus&&map.has(focus));
+  // In the whole flow the column already says which phase an item belongs to;
+  // only the phase chain and links between items are drawn, unlabelled.
+  const containers=new Set(nodes.filter(n=>['Change','Flow','Phase'].includes(n.label)).map(n=>n.id));
+  const displayedLinks=links.filter(l=>visible.has(l.from)&&visible.has(l.to)&&l.type!=='HAS_PHASE'&&!(wholeLayout&&containers.has(l.from)));
   if(!focus){const flow=[nodes.find(n=>['Change','Flow'].includes(n.label)),...phaseOrder.map(phase)].filter(Boolean);for(let i=1;i<flow.length;i++)displayedLinks.push({from:flow[i-1].id,to:flow[i].id,type:'NEXT'});}
   return { nodes:nodes.filter(n=>visible.has(n.id)).map(n=>({id:n.id,type:'changeNode',position:positions.get(n.id),data:{...n,childCount:children[n.id]?.length||0,expanded:expanded.has(n.id)}})),
-    edges:displayedLinks.map((l,i)=>({id:l.from+':'+l.type+':'+l.to+':'+i,source:l.from,target:l.to,label:l.type==='NEXT'?'':l.type.replaceAll('_',' '),type:'smoothstep',markerEnd:{type:'arrowclosed'},animated:l.type==='NEXT'&&map.get(l.to)?.status==='active'})),
+    edges:displayedLinks.map((l,i)=>({id:l.from+':'+l.type+':'+l.to+':'+i,source:l.from,target:l.to,label:l.type==='NEXT'||wholeLayout?'':l.type.replaceAll('_',' '),type:'smoothstep',markerEnd:{type:'arrowclosed'},animated:l.type==='NEXT'&&map.get(l.to)?.status==='active'})),
     allNodes:nodes,allLinks:links,children };
 }

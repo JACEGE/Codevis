@@ -39,7 +39,8 @@ class TestSession {
 
     async run(cypher, params = {}) {
         const { cypher: translated, injectNow, creates } = translate(cypher);
-        const out = { ...params };
+        // Same parameter normalisation as the daemon's local session.
+        const out = require('../../server/ladybug-local-session.cjs').plainValue({ ...params });
         if (injectNow && !("__now" in out)) out.__now = Date.now();
         // CREATE identity: the translator injects $__uidN/$__seqN per CREATE
         // node pattern; the daemon resolves them off a per-db counter.

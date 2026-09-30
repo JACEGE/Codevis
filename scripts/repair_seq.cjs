@@ -38,7 +38,6 @@ async function repairSeq(session, { log = console.log, intValue = ladybug.int } 
     const seqs = num(before.records[0].get('seqs'));
     if (knoten === 0 || seqs === knoten) return 0;
 
-    log(`[seq] ${seqs} distinct values for ${knoten} nodes — repairing collisions`);
     const duplicateGroups = await session.run(`
         MATCH (n)
         WITH n.seq AS seq, collect(elementId(n)) AS uids
@@ -82,7 +81,9 @@ async function repairSeq(session, { log = console.log, intValue = ladybug.int } 
     if (s2 !== knoten) {
         log(`[seq] WARNING: still only ${s2} distinct values for ${knoten} nodes`);
     } else {
-        log(`[seq] repaired ${repaired} collision(s); ${knoten} nodes now have ${s2} unique seq values`);
+        // Expected after every write: the daemon assigns one seq per UNWIND batch.
+        // Identity is uid/elementId; seq is only a compact display number.
+        log(`[seq] renumbered ${repaired} batch-shared display number(s); ${knoten} nodes (expected after writes, identity is unaffected)`);
     }
     return repaired;
 }

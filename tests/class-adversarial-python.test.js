@@ -56,8 +56,10 @@ function variableRecorder() {
         variables, owners,
         async run(cypher, params = {}) {
             const flat = cypher.replace(/\s+/g, ' ').trim();
-            if (flat.includes('MERGE (v:Variable')) variables.push(params);
-            else if (flat.includes('MERGE (cls)-[:DECLARES]->(v)')) owners.set(params.elementId, params.className);
+            // The builder writes variables in UNWIND batches; record them per row.
+            const each = Array.isArray(params.rows) ? params.rows.map(row => ({ ...params, ...row })) : [params];
+            if (flat.includes('MERGE (v:Variable')) variables.push(...each);
+            else if (flat.includes('MERGE (cls)-[:DECLARES]->(v)')) for (const row of each) owners.set(row.elementId, row.className);
             return { records: [] };
         },
     };

@@ -1959,7 +1959,7 @@ Object.assign(handlers, {
 definitions.push(...["plan_task_scope", "expand_task_scope"].map(name => ({
     name,
     description: name === "plan_task_scope"
-        ? "Add explicit file edit scope before claiming a task. Plans do not reserve ownership. Exact paths may name new files."
+        ? "Add explicit file edit scope before claiming a task. Plans do not reserve ownership. Exact paths may name new files. Works with locking off too: the plan feeds sync_task, wave planning and planned-vs-actual."
         : "Atomically expand a claimed task into free files. A conflict changes no claims and returns immediately. Coordinate a safe checkpoint and explicit handoff; do not retry while holding competing claims.",
     inputSchema: {
         type: "object",

@@ -125,10 +125,30 @@ function readWorkspaceIdentity(workspaceName) {
     }
 }
 
+/**
+ * What a recorded identity that differs from the current one means:
+ *   'sources'   — same project, the configured source folders changed
+ *   'relocated' — the project folder moved (another path, Windows → WSL) and
+ *                 took its own .codevis with it
+ *   'foreign'   — the database belongs to another project (an external data
+ *                 dir shared or pointed at the wrong place)
+ * Only 'foreign' must stop a build. The other two are ordinary life; a full
+ * rebuild re-derives the code graph and keeps Tasks, Flows and Knowledge.
+ */
+function identityChange(expected, recorded) {
+    if (!recorded || recorded.fingerprint === expected.fingerprint) return null;
+    const same = (a, b) => process.platform === 'win32' ? String(a).toLowerCase() === String(b).toLowerCase() : a === b;
+    if (recorded.workspace && recorded.workspace !== expected.workspace) return 'foreign';
+    if (same(recorded.projectRoot, expected.projectRoot)) return 'sources';
+    const ownDataDir = same(DATA_DIR, canonicalize(path.join(PROJECT_ROOT, '.codevis'))) || USING_LEGACY_DATA_DIR;
+    return ownDataDir ? 'relocated' : 'foreign';
+}
+
 function workspaceIdentityStatus(config, workspaceName) {
     const expected = workspaceIdentity(config, workspaceName);
     const recorded = readWorkspaceIdentity(workspaceName);
-    return { expected, recorded, mismatch: Boolean(recorded && recorded.fingerprint !== expected.fingerprint) };
+    const change = identityChange(expected, recorded);
+    return { expected, recorded, mismatch: Boolean(change), change };
 }
 
 function writeWorkspaceIdentity(config, workspaceName) {
@@ -214,5 +234,6 @@ module.exports = {
     workspaceIdentityPath,
     readWorkspaceIdentity,
     workspaceIdentityStatus,
+    identityChange,
     writeWorkspaceIdentity,
 };

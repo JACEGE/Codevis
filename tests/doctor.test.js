@@ -189,14 +189,21 @@ test('legacy storage and database identity problems are explicit', () => {
         databases: [{
             name: 'project_db', exists: true, sizeBytes: 1, mtime: 'now',
             identity: {
-                mismatch: true,
+                mismatch: true, change: 'sources',
                 expected: { sourceDirs: ['C:/new/src'] },
                 recorded: { sourceDirs: ['C:/old/src'] },
             },
+        }, {
+            name: 'codevis_db', exists: true, sizeBytes: 1, mtime: 'now',
+            identity: { mismatch: true, change: 'foreign', expected: { projectRoot: 'C:/mine' }, recorded: { projectRoot: 'C:/theirs' } },
         }],
     }));
     assert.ok(found.some((item) => item.title === 'Legacy data directory in use'));
-    assert.ok(found.some((item) => item.level === 'error' && /different source directories/.test(item.title)));
+    // A changed source list is announced, not an error: the next build handles it.
+    const sources = found.find((item) => /source directories changed/.test(item.title));
+    assert.equal(sources.level, 'warn');
+    assert.match(sources.detail, /Tasks, Flows and Knowledge are kept/);
+    assert.ok(found.some((item) => item.level === 'error' && /belongs to another project/.test(item.title)));
 });
 
 test('an existing database without a marker is reported as unverified', () => {

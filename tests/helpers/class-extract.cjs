@@ -76,8 +76,16 @@ function recordingSession() {
     return {
         graph: { classes, functions, fields, inherits, decorators, other },
         async run(cypher, params = {}) {
-            const p = Object.fromEntries(Object.entries(params).map(([k, v]) => [k, plain(v)]));
             const flat = cypher.replace(/\s+/g, " ").trim();
+            // Batched writes (UNWIND $rows AS row …) are recorded row by row,
+            // exactly as the one-statement-per-row form they replace.
+            if (flat.startsWith("UNWIND $rows AS row ") && Array.isArray(params.rows)) {
+                const { rows: batch, ...shared } = params;
+                const single = flat.slice("UNWIND $rows AS row ".length).replace(/\brow\./g, "$");
+                for (const row of batch) await this.run(single, { ...shared, ...row });
+                return rows([]);
+            }
+            const p = Object.fromEntries(Object.entries(params).map(([k, v]) => [k, plain(v)]));
             const has = (s) => flat.includes(s);
 
             // ── Lesende Abfragen zuerst ──────────────────────────────────────

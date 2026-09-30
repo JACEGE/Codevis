@@ -24,3 +24,37 @@ test('quality expansion contains actual evidence categories and inspectable find
  const graph=changeGraphModel(detail(),{expanded:new Set(['quality','quality:evidence:checks','quality:evidence:issues']),quality});
  assert.ok(graph.nodes.some(n=>n.data.title==='unit'&&n.data.status==='error'));assert.ok(graph.nodes.some(n=>n.data.content==='Unit tests failed.'));
 });
+test('whole flow lays every phase out side by side with its content, Tasks under Development', async()=>{
+ const {changeGraphModel}=await import('../frontend/src/changes/graphModel.js');
+ const whole=changeGraphModel(detail(),{whole:true});
+ const at=id=>whole.nodes.find(n=>n.id===id)?.position;
+ // Phases form one row, left to right in workflow order, chained by NEXT.
+ const xs=phases.map(id=>at(id).x);assert.deepEqual(xs,[...xs].sort((a,b)=>a-b));assert.ok(phases.every(id=>at(id).y===0));
+ assert.ok(whole.edges.some(e=>e.source==='requirements'&&e.target==='analysis'));
+ // Content sits in its phase's column, below it, without expanding anything.
+ assert.equal(at('r').x,at('requirements').x);assert.ok(at('r').y>0);
+ assert.equal(at('task').x,at('development').x,'a Task is shown where it is built');
+ assert.equal(whole.nodes.filter(n=>n.id==='task').length,1);
+ assert.ok(!whole.nodes.some(n=>n.id==='ac'),'nested criteria stay one click away');
+ assert.equal(new Set(whole.nodes.map(n=>n.position.x+':'+n.position.y)).size,whole.nodes.length);
+});
+test('whole flow wraps a long phase into sub-columns and moves the next phase right of them', async()=>{
+ const {changeGraphModel}=await import('../frontend/src/changes/graphModel.js');
+ const d=detail();
+ for(let i=2;i<=9;i++)d.graph.nodes.push({id:'r'+i,key:'REQ-'+i,label:'Requirement',title:'Requirement '+i});
+ const whole=changeGraphModel(d,{whole:true});
+ const at=id=>whole.nodes.find(n=>n.id===id).position;
+ const reqs=whole.nodes.filter(n=>n.data.label==='Requirement');
+ assert.equal(reqs.length,9);assert.ok(Math.max(...reqs.map(n=>n.position.y))<=6*200,'at most six rows');
+ assert.equal(new Set(reqs.map(n=>n.position.x)).size,2,'two sub-columns');
+ assert.ok(at('analysis').x>Math.max(...reqs.map(n=>n.position.x)),'next phase starts after the wrapped column');
+ assert.equal(new Set(whole.nodes.map(n=>n.position.x+':'+n.position.y)).size,whole.nodes.length);
+});
+test('whole flow draws the phase chain and item links, not phase-to-item containment', async()=>{
+ const {changeGraphModel}=await import('../frontend/src/changes/graphModel.js');
+ const d=detail();d.graph.links.push({from:'requirements',to:'r',type:'HAS_REQUIREMENT'});
+ const whole=changeGraphModel(d,{whole:true});
+ assert.ok(!whole.edges.some(e=>e.source==='requirements'&&e.target==='r'));
+ assert.ok(whole.edges.some(e=>e.source==='task'&&e.target==='r'),'a Task still points at its requirement');
+ assert.ok(whole.edges.every(e=>e.label===''));
+});

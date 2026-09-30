@@ -196,8 +196,12 @@ to invalidate direct importers/callers, and parse the new/changed files plus
 those dependents. A uniquely matching Function body/parameter fingerprint
 carries locks and authored `AFFECTS`, `TOUCHED` and `APPLIES_TO` links across a
 Function or file rename. Ambiguous fingerprints are never guessed; the build
-logs a failed restore instead. Full builds remain appropriate after parser,
-schema or `sourceDir` changes.
+logs a failed restore instead. Full builds remain appropriate after parser or
+schema changes. After a `sourceDir` change, or when the project folder moved
+(for example from Windows into WSL), the next `codevis build` rebuilds the code
+graph in full on its own; Tasks, Epics, Flows, Knowledge, Specs and authored
+links are kept. Only a database that belongs to another project (an external
+`CODEVIS_DATA_DIR`) stops the build, and nothing is changed then.
 
 ## Dashboard workflow
 

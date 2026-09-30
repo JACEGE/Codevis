@@ -36,6 +36,37 @@ export const UID_SEQ_RE = /^[a-z][a-z0-9_]*:\d+$/;
 // wie sie die Spalte genannt hat, veraltet nicht.
 export const ID_COLUMNS = new Set(['uid', 'uids', 'elementid', 'nodeid']);
 
+/** Ein ganzer Knoten aus `RETURN n`: ein Objekt mit uid, aber ohne Kantenenden. */
+export function isNodeValue(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value)
+        && typeof value.uid === 'string' && value.uid !== ''
+        && !('_src' in value) && !('_dst' in value);
+}
+
+function isRelValue(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value)
+        && ('_src' in value || '_dst' in value);
+}
+
+/**
+ * Lesbarer Zelleninhalt. `String(value)` machte aus jedem Knoten und jeder
+ * Kante „[object Object]".
+ */
+export function describeValue(value) {
+    if (value === null || value === undefined) return '';
+    if (Array.isArray(value)) return value.map(describeValue).join(', ');
+    if (isNodeValue(value)) {
+        const label = value.label || value._label || 'Node';
+        const name = value.name ?? value.title ?? value.path ?? value.uid;
+        return `${label}: ${name}`;
+    }
+    if (isRelValue(value)) return `[:${value._label || value.type || 'REL'}]`;
+    if (typeof value === 'object') {
+        try { return JSON.stringify(value); } catch { return String(value); }
+    }
+    return String(value);
+}
+
 /** Jede Identität einer Zeile, aus jeder Spalte, auch aus collect()-Listen. */
 export function rowKeys(row) {
     const ipv6s = [];
@@ -44,6 +75,11 @@ export function rowKeys(row) {
         const named = ID_COLUMNS.has(String(column).toLowerCase());
         const candidates = Array.isArray(value) ? value : [value];
         for (const c of candidates) {
+            // `RETURN n` liefert den ganzen Knoten als Objekt. Seine uid ist
+            // die Identität; eine Kante (`_src`/`_dst`) adressiert keinen
+            // Knoten. Nur Strings anzusehen machte `RETURN f, r, g` komplett
+            // „not representable".
+            if (isNodeValue(c)) { uids.push(c.uid); continue; }
             if (typeof c !== 'string') continue;
             // uids gehen unverändert durch — ein Knoten, der nach einem
             // Ausdruck benannt ist, darf auf ein Leerzeichen enden, und es

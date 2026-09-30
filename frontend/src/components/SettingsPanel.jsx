@@ -70,6 +70,9 @@ function SettingsPanel({ activeDb, connected, growthMode, growthSpeed, maxVisibl
     // exponierten Bridge. Im Normalfall genügt eine Rückfrage, denn wovor hier
     // geschützt wird, ist ein Fehlklick und kein Angreifer.
     const [metaUnlockRequired, setMetaUnlockRequired] = useState(false);
+    // null until /api/status answers; an older bridge that does not report the
+    // list keeps the button enabled as before.
+    const [availableWorkspaces, setAvailableWorkspaces] = useState(null);
 
     // Which directories the active graph was built from. Keyed on activeDb
     // because the two workspaces have different source dirs — switching the
@@ -91,6 +94,7 @@ function SettingsPanel({ activeDb, connected, growthMode, growthSpeed, maxVisibl
                 setDatabaseIdentity(data.databaseIdentity || null);
                 setUsingLegacyDataDir(Boolean(data.usingLegacyDataDir));
                 setMetaUnlockRequired(Boolean(data.metaUnlockRequired));
+                if (Array.isArray(data.availableWorkspaces)) setAvailableWorkspaces(data.availableWorkspaces);
                 setStatusState({db: activeDb, ready: true});
             })
             .catch((err) => {
@@ -168,7 +172,9 @@ function SettingsPanel({ activeDb, connected, growthMode, growthSpeed, maxVisibl
                                     setSwitchError('');
                                     setMetaUnlockOpen(true);
                                 }}
-                                disabled={loading}
+                                disabled={loading || (availableWorkspaces !== null && !availableWorkspaces.includes('codevis_db'))}
+                                title={availableWorkspaces !== null && !availableWorkspaces.includes('codevis_db')
+                                    ? 'This project has no codevis_db workspace configured.' : undefined}
                             >
                                 {db === 'codevis_db' ? 'CodeVis' : (metaUnlockRequired ? '🔒 CodeVis' : 'CodeVis')}
                             </button>
@@ -302,8 +308,11 @@ function SettingsPanel({ activeDb, connected, growthMode, growthSpeed, maxVisibl
                         <div className="settings-section">
                             <label className="settings-label">Database Identity</label>
                             <div className="settings-source-meta">
-                                {databaseIdentity?.mismatch
-                                    ? 'Blocked: this database was built from different source directories. Move it aside or restore the recorded configuration before rebuilding.'
+                                {databaseIdentity?.change === 'foreign'
+                                    ? 'Blocked: this database belongs to another project. Point CODEVIS_DATA_DIR at this project\'s own data directory. Nothing was changed.'
+                                    : databaseIdentity?.mismatch
+                                    ? (databaseIdentity.change === 'relocated' ? 'The project folder moved.' : 'The source directories changed.')
+                                      + ' The next build rebuilds the code graph in full; Tasks, Flows, Knowledge and authored links are kept.'
                                     : !databaseIdentity?.recorded
                                     ? 'Unverified database: rebuild this graph once to record its project and source directories.'
                                     : null}

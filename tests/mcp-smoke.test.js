@@ -153,11 +153,13 @@ describe("MCP Server Smoke Tests", () => {
             description: 'Verify that a Knowledge node can be linked by exact identity to this existing task through the MCP protocol.',
             workInstructions: 'Create Knowledge, update it using nodeId, link it to this task, and verify the exact linked identities returned by list_knowledge.',
         });
+        // Both identities come back: taskId for the Task tools, nodeId for graph and Flow links.
+        assert.match(task.nodeId, /^task:/);
         const linked = await call('link_knowledge', { nodeId: created.nodeId, taskId: task.taskId });
         assert.equal(linked.edgesCreated, 1);
         const row = (await call('list_knowledge', {})).knowledge.find(item => item.nodeId === created.nodeId);
         assert.equal(row.content, 'After'); assert.equal(row.linkedTo.length, 1);
-        assert.equal(row.linkedTo[0].type, 'Task'); assert.equal(typeof row.linkedTo[0].id, 'string');
+        assert.equal(row.linkedTo[0].type, 'Task'); assert.equal(row.linkedTo[0].id, task.nodeId);
     });
 
     it("predefined_queries returns query catalogue", async () => {

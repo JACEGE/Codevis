@@ -1128,3 +1128,40 @@ input::placeholder {
 .test-result-label[data-result="pass"] { color: var(--success, #45ad7b); }
 .test-result-label[data-result="fail"] { color: var(--danger); }
 .test-result-label[data-result="stale"] { color: var(--warning, #cc9737); }
+
+/* ── Compact workspace header ─────────────────────────────────────────────
+   Row 1: brand, history, project, search, sections, layout, theme, collapse.
+   Row 2: the active section's views. Subtitles and descriptions are tooltips. */
+.app-nav-sections-row { display:flex; align-items:flex-start; gap:6px; width:100%; }
+.app-nav-sections-row .theme-toggle { margin-left:auto; }
+.workspace-heading { padding:8px 16px 4px; gap:8px; }
+.workspace-heading .app-nav-sections--compact { width:auto; gap:2px; margin-left:6px; padding-left:10px; border-left:1px solid var(--border); }
+.app-nav-sections--compact .app-nav-section { display:flex; align-items:center; min-height:34px; padding:6px 11px; }
+.app-nav-sections--compact .app-nav-group-label { font-size:13px; }
+.workspace-heading .workspace-layout { margin-left:auto; }
+.workspace-header .app-nav { padding:2px 16px 6px; gap:0; }
+.workspace-collapse { min-width:34px; padding:0 9px; font-size:11px; }
+
+/* Collapsed: one slim row with a breadcrumb that expands again. */
+.workspace-heading--collapsed { padding:4px 12px; flex-wrap:nowrap; }
+.workspace-breadcrumb { display:flex; align-items:center; gap:8px; min-width:0; padding:3px 8px; border:0; border-radius:6px;
+  background:transparent; color:var(--muted); font:inherit; font-size:13px; cursor:pointer; white-space:nowrap; overflow:hidden; }
+.workspace-breadcrumb:hover { background:var(--surface-hover); }
+.workspace-breadcrumb .workspace-brand { font-size:15px; color:var(--text); }
+.workspace-crumb-sep { opacity:.5; }
+.workspace-crumb--current { color:var(--text); font-weight:600; overflow:hidden; text-overflow:ellipsis; }
+.workspace-heading--collapsed .ui-button { min-height:28px; padding:3px 10px; font-size:12px; }
+
+/* Full view: the header keeps a 6px strip in the layout; its content slides
+   in over the page while the pointer (or keyboard focus) is on it; a mouse click leaves no reveal behind. */
+.workspace-header--autohide { position:relative; height:6px; overflow:visible; border-bottom:2px solid var(--accent); }
+.workspace-header--autohide .workspace-header-inner { position:absolute; left:0; right:0; top:0; z-index:300;
+  background:var(--surface); border-bottom:1px solid var(--border);
+  transform:translateY(-100%); transition:transform .16s ease, box-shadow .16s ease; }
+.workspace-header--autohide.workspace-header--revealed .workspace-header-inner,
+.workspace-header--autohide:has(:focus-visible) .workspace-header-inner { transform:none; box-shadow:0 10px 28px rgba(0,0,0,.35); }
+@media (prefers-reduced-motion: reduce) { .workspace-header--autohide .workspace-header-inner { transition:none; } }
+@media (max-width:760px) {
+  .workspace-heading .app-nav-sections--compact { margin-left:0; padding-left:0; border-left:0; flex-basis:100%; }
+  .workspace-heading--collapsed .workspace-layout { display:none; }
+}

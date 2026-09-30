@@ -29,6 +29,8 @@ function runHook(script, stdinData, env = {}) {
         }, (err, stdout, stderr) => {
             if (err && err.killed) return reject(new Error("Hook timed out"));
             // Hooks always exit 0, even on deny
+            // No output means "no decision": Claude Code then asks as usual.
+            if (!stdout.trim()) return resolve({ permissionDecision: "no-decision" });
             try {
                 const result = JSON.parse(stdout.trim());
                 resolve(result.hookSpecificOutput);
@@ -104,7 +106,7 @@ describe("lock-guard.js", () => {
             assert.equal(expected.permissionDecision, 'deny');
             assert.deepEqual(await runHook(checkout, payload, env), expected);
             const disabled = await runHook(checkout, payload, { ...env, CODEVIS_LOCKING: 'off' });
-            assert.equal(disabled.permissionDecision, 'allow');
+            assert.equal(disabled.permissionDecision, 'no-decision');
         }
     });
 
@@ -137,7 +139,7 @@ describe("lock-guard.js", () => {
                 new_string: "const unrelatedThing = 2;",
             },
         }, { CODEVIS_AGENT_ID: "worker-1" });
-        assert.equal(result.permissionDecision, "allow");
+        assert.equal(result.permissionDecision, "no-decision");
     });
 
     it("blocks a file reserved by a nameless (file-level) foreign lock", async () => {
@@ -165,7 +167,7 @@ describe("lock-guard.js", () => {
                 new_string: "if (value == null) {",
             },
         }, { CODEVIS_AGENT_ID: "worker-2" });
-        assert.equal(result.permissionDecision, "allow");
+        assert.equal(result.permissionDecision, "no-decision");
     });
 
     it("denies when the lock manifest is unreadable", async () => {
@@ -242,7 +244,7 @@ describe("lock-guard.js", () => {
             tool_name: "Write",
             tool_input: { file_path: resolve(PROJECT_DIR, file), content: "// new code" },
         }, { CODEVIS_AGENT_ID: agentId });
-        assert.equal((await create("new/claimed-file.js", "worker-1")).permissionDecision, "allow");
+        assert.equal((await create("new/claimed-file.js", "worker-1")).permissionDecision, "no-decision");
         assert.equal((await create("new/claimed-file.js", "worker-2")).permissionDecision, "deny");
         assert.equal((await create("new/expired-file.js", "worker-1")).permissionDecision, "deny");
         assert.equal((await create("new/unclaimed-file.js", "worker-1")).permissionDecision, "deny");
@@ -308,7 +310,7 @@ describe("lock-guard.js", () => {
                 const script = resolve(dir, name);
                 fs.copyFileSync(resolve(PROJECT_DIR, 'templates/hooks', name), script);
                 const output = await runHook(script, { tool_name: 'Edit', tool_input: { file_path: 'src/app.js' } }, { CLAUDE_PROJECT_DIR: dir, CODEVIS_LOCKING: 'off' });
-                assert.equal(output.permissionDecision, 'allow');
+                assert.equal(output.permissionDecision, 'no-decision');
             }
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
@@ -335,7 +337,7 @@ describe("lock-guard.js", () => {
                 file_path: resolve(PROJECT_DIR, "scripts/graph_builder.js"),
             },
         }, { CODEVIS_AGENT_ID: "worker-3" });
-        assert.equal(result.permissionDecision, "allow");
+        assert.equal(result.permissionDecision, "no-decision");
     });
 
     it("bypasses lock enforcement when project locking is disabled", async () => {
@@ -347,7 +349,7 @@ describe("lock-guard.js", () => {
                 new_string: "function findFiles(dir,",
             },
         }, { CODEVIS_AGENT_ID: "worker-9", CODEVIS_LOCKING: "off" });
-        assert.equal(result.permissionDecision, "allow");
+        assert.equal(result.permissionDecision, "no-decision");
     });
 });
 
@@ -380,21 +382,21 @@ describe("bash-guard.js", () => {
         const result = await runHook(BASH_GUARD, {
             tool_input: { command: "sed -i 's/foo/bar/' scripts/graph_builder.js" },
         }, { CODEVIS_AGENT_ID: "" });
-        assert.equal(result.permissionDecision, "allow");
+        assert.equal(result.permissionDecision, "no-decision");
     });
 
     it("allows harmless commands", async () => {
         const result = await runHook(BASH_GUARD, {
             tool_input: { command: "ls -la" },
         }, { CODEVIS_AGENT_ID: "worker-2" });
-        assert.equal(result.permissionDecision, "allow");
+        assert.equal(result.permissionDecision, "no-decision");
     });
 
     it("allows npm/node commands", async () => {
         const result = await runHook(BASH_GUARD, {
             tool_input: { command: "npm test" },
         }, { CODEVIS_AGENT_ID: "worker-2" });
-        assert.equal(result.permissionDecision, "allow");
+        assert.equal(result.permissionDecision, "no-decision");
     });
 
     it("blocks sed -i on locked file by other agent", async () => {
@@ -408,7 +410,7 @@ describe("bash-guard.js", () => {
         const result = await runHook(BASH_GUARD, {
             tool_input: { command: "sed -i 's/foo/bar/' scripts/graph_builder.js" },
         }, { CODEVIS_AGENT_ID: "worker-1" });
-        assert.equal(result.permissionDecision, "allow");
+        assert.equal(result.permissionDecision, "no-decision");
     });
 
     it("blocks rm on locked source file", async () => {
@@ -422,7 +424,7 @@ describe("bash-guard.js", () => {
         const result = await runHook(BASH_GUARD, {
             tool_input: { command: "rm tmp/output.log" },
         }, { CODEVIS_AGENT_ID: "worker-2" });
-        assert.equal(result.permissionDecision, "allow");
+        assert.equal(result.permissionDecision, "no-decision");
     });
 
     it("denies on malformed JSON input when agentId is set", async () => {
@@ -463,5 +465,26 @@ describe("bash-guard.js", () => {
             tool_input: { command: "echo 'x' > scripts/graph_builder.js" },
         }, { CODEVIS_AGENT_ID: "worker-2" });
         assert.equal(result.permissionDecision, "deny");
+    });
+});
+
+describe("hooks never auto-approve", () => {
+    // A hook with nothing to block must stay silent. Printing "allow" made
+    // Claude Code skip its permission prompt for every Bash/Edit/Write call
+    // in a default setup (locking off, no agent id).
+    const quiet = (script, input, env) => new Promise((done, fail) => {
+        const child = execFile("node", [script], {
+            env: { ...process.env, CLAUDE_PROJECT_DIR: PROJECT_DIR, CODEVIS_AGENT_ID: "", CODEVIS_LOCKING: "off", ...env },
+            timeout: 5000,
+        }, (err, stdout) => (err && err.killed ? fail(new Error("Hook timed out")) : done(stdout)));
+        child.stdin.end(JSON.stringify(input));
+    });
+
+    it("bash-guard prints nothing for an unguarded command", async () => {
+        assert.equal(await quiet(BASH_GUARD, { tool_name: "Bash", tool_input: { command: "rm -rf ~/important" } }), "");
+    });
+
+    it("lock-guard prints nothing for an unguarded edit", async () => {
+        assert.equal(await quiet(LOCK_GUARD, { tool_name: "Write", tool_input: { file_path: "/tmp/x.js", content: "" } }), "");
     });
 });

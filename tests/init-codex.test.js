@@ -72,3 +72,33 @@ test('invalid or non-extensible TOML fails without modifying or leaking user con
     assert.equal(fs.readFileSync(file, 'utf8'), original);
   }
 });
+
+test('a moved project points its existing Codex entry at the new location and keeps user settings', async t => {
+  const { configureCodex } = await import('../lib/init-codex.mjs');
+  const old = String.raw`D:\Projekte\kaira\demo`;
+  const { root, file } = project(t, `# my notes
+[mcp_servers.codevis_graph]
+command = "C:\\\\Program Files\\\\nodejs\\\\node.exe"
+args = [ "D:\\\\Projekte\\\\kaira\\\\demo\\\\node_modules\\\\codevis\\\\bin\\\\codevis.mjs", "start" ]
+cwd = "D:\\\\Projekte\\\\kaira\\\\demo"
+enabled = false
+tool_timeout_sec = 999
+
+[mcp_servers.codevis_graph.env]
+CODEVIS_PROJECT_DIR = "D:\\\\Projekte\\\\kaira\\\\demo"
+CODEVIS_ROLE = "lead"
+`);
+  const launcher = join(root, 'node_modules/codevis/bin/codevis.mjs');
+  const result = configureCodex(root, launcher);
+  assert.equal(result.relocated, old);
+  const source = fs.readFileSync(file, 'utf8');
+  const server = parse(source).mcp_servers.codevis_graph;
+  assert.equal(server.command, process.execPath);
+  assert.deepEqual(server.args, [launcher, 'start']);
+  assert.equal(server.cwd, root);
+  assert.equal(server.env.CODEVIS_PROJECT_DIR, root);
+  assert.equal(server.enabled, false, 'user settings survive');
+  assert.equal(server.tool_timeout_sec, 999);
+  assert.match(source, /^# my notes/);
+  assert.equal(configureCodex(root, launcher).relocated, undefined, 'idempotent');
+});

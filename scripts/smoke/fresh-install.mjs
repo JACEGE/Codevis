@@ -260,7 +260,9 @@ try {
       cwd: projectDir, capture: true, input: JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: 'src/index.js' } }),
       likelyCause: 'A shipped hook failed to execute in an ESM project.',
     });
-    assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'allow');
+    // No output means "no decision": the user's own permission rules still
+    // apply. Printing permissionDecision:"allow" would skip them.
+    assert.equal(result.stdout.trim(), '');
   }
 
   step("Starting the generated Codex MCP command and checking its workspace");

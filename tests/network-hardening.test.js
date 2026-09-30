@@ -23,6 +23,17 @@ test('browser opener uses argument arrays instead of a shell command string', ()
     assert.equal(calls[0][2].windowsHide, true);
 });
 
+test('a missing browser opener is reported, never crashes the dashboard, and WSL uses the Windows browser', () => {
+    const { EventEmitter } = require('node:events');
+    const calls = [], logs = [];
+    const spawnImpl = (...args) => { calls.push(args); const child = new EventEmitter(); child.unref = () => {}; setImmediate(() => child.emit('error', new Error('spawn ENOENT'))); return child; };
+    assert.equal(openBrowser('http://localhost:4042', { platform: 'linux', wsl: false, spawnImpl, log: m => logs.push(m) }), true);
+    assert.equal(calls[0][0], 'xdg-open');
+    assert.equal(openBrowser('http://localhost:4042', { platform: 'linux', wsl: true, spawnImpl, log: m => logs.push(m) }), true);
+    assert.deepEqual([calls[1][0], calls[1][1], calls[1][2].cwd], ['cmd.exe', ['/d', '/c', 'start', '', 'http://localhost:4042'], '/mnt/c']);
+    return new Promise(resolve => setImmediate(() => { assert.equal(logs.length, 2); assert.match(logs[0], /Open http:\/\/localhost:4042 yourself/); resolve(); }));
+});
+
 test('web Kanban is loopback-only and accepts public database names', () => {
     const source = fs.readFileSync(path.join(root, 'lib/kanban-server.mjs'), 'utf8');
     assert.equal(LOOPBACK_HOST, '127.0.0.1');

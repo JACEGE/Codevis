@@ -213,13 +213,20 @@ function diagnose(facts) {
                 detail: "Run 'codevis build' to create it. Until then every query returns nothing, which "
                     + "is easy to mistake for a broken graph.",
             });
-        } else if (db.identity?.mismatch) {
+        } else if (db.identity?.change === 'foreign') {
             findings.push({
                 level: LEVELS.error,
-                title: `${db.name} belongs to different source directories`,
+                title: `${db.name} belongs to another project`,
+                detail: `Recorded for ${db.identity.recorded?.projectRoot}. `
+                    + "Point CODEVIS_DATA_DIR at this project's own data directory; builds refuse until then.",
+            });
+        } else if (db.identity?.mismatch) {
+            findings.push({
+                level: LEVELS.warn,
+                title: db.identity.change === 'relocated' ? `${db.name}: project folder moved` : `${db.name}: source directories changed`,
                 detail: `Recorded: ${JSON.stringify(db.identity.recorded?.sourceDirs || [])}. `
                     + `Configured now: ${JSON.stringify(db.identity.expected?.sourceDirs || [])}. `
-                    + "Move the database aside or restore the recorded sourceDir before building.",
+                    + "The next 'codevis build' rebuilds the code graph in full; Tasks, Flows and Knowledge are kept.",
             });
         } else if (db.identity && !db.identity.recorded) {
             findings.push({

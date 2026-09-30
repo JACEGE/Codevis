@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import BRIDGE_URL from '../bridgeUrl';
 import useRequestLifetime from '../hooks/useRequestLifetime';
-import { rowKeys, rowIpv6s } from '../explore/rowIdentity';
+import { rowKeys, rowIpv6s, describeValue } from '../explore/rowIdentity';
 import { resultColumns } from '../explore/resultColumns';
 
 /**
@@ -383,11 +383,9 @@ function ResultTable({ rows, truncated, limit, error, loading, graphData, onShow
                                     const val = row[col];
                                     const display = val === null || val === undefined
                                         ? <span style={{ color: 'var(--muted, #94a3b8)' }}>null</span>
-                                        : Array.isArray(val)
-                                            ? val.join(', ')
-                                            : String(val);
+                                        : describeValue(val);
                                     return (
-                                        <td key={col} title={String(val ?? '')} style={{
+                                        <td key={col} title={describeValue(val)} style={{
                                             padding: '5px 10px',
                                             borderBottom: '1px solid var(--border, #2a2f37)',
                                             maxWidth: 220,
