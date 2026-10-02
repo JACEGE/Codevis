@@ -13,6 +13,13 @@ installation test including database recovery and browser workspace isolation.
 The final `Release platform gate` fails if a matrix job fails or is cancelled.
 These tests do not call a paid model provider and do not publish a package.
 
+On the hosted Ubuntu runners, CI points Puppeteer at the preinstalled system
+Chrome (`/opt/google/chrome/chrome`) before installing dependencies. Ubuntu's
+AppArmor policy supports its sandbox, while Puppeteer's downloaded Chrome for
+Testing can fail with `No usable sandbox!`. The workflow verifies that the
+executable exists and logs its version; it does not disable the sandbox or skip
+browser tests. Windows and macOS keep Puppeteer's default browser selection.
+
 Before publishing:
 
 1. Push the intended release commit only with the maintainer's authorization.

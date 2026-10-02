@@ -27,6 +27,15 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             frontend/package-lock.json
+      # Ubuntu's AppArmor profile permits sandboxed system Chrome, while the
+      # Chrome for Testing binary downloaded by Puppeteer cannot use it.
+      - name: Use sandboxed system Chrome on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          test -x /opt/google/chrome/chrome
+          echo "PUPPETEER_EXECUTABLE_PATH=/opt/google/chrome/chrome" >> "$GITHUB_ENV"
+          /opt/google/chrome/chrome --version
       - run: npm ci
       # Root-level tests exercise browser sanitization and Three.js resource
       # helpers directly, so the separately locked frontend dependencies are
