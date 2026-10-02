@@ -42,6 +42,7 @@ function mount({ delayStatus = false } = {}) {
       };
       if (name === '../bridgeUrl') return { default: 'http://127.0.0.1:12345', __esModule: true };
       if (name === '../hooks/useTheme') return { default: () => ['dark'], __esModule: true };
+      if (name === '../theme/tokens') return require('../frontend/src/theme/tokens.js');
       if (name === '@xterm/xterm') return { Terminal };
       if (name === '@xterm/addon-fit') return { FitAddon: class { fit() {} } };
       if (name === '@xterm/addon-web-links') return { WebLinksAddon: class {} };

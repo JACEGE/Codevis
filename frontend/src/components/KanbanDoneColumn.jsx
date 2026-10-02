@@ -28,7 +28,7 @@ export default function KanbanDoneColumn({ column, tasks, styles, collapsed, dra
             onDrop={(event) => onDrop(event, column.key)}
         >
             <div
-                style={{ ...styles.columnHeader, borderBottomColor: column.color, backgroundColor: 'transparent' }}
+                style={{ ...styles.columnHeader, backgroundColor: 'transparent' }}
                 onDragOver={(event) => onDragOver(event, column.key)}
                 onDrop={(event) => onDrop(event, column.key)}
             >
@@ -42,7 +42,7 @@ export default function KanbanDoneColumn({ column, tasks, styles, collapsed, dra
                 <span style={{ ...styles.columnDot, backgroundColor: column.color }} />
                 <span style={styles.columnLabel}>{column.label}</span>
                 <span style={styles.columnCount}>{tasks.length}</span>
-                <button onClick={onToggleCollapsed} title={collapsed ? 'Expand' : 'Collapse'} style={collapseButtonStyle}>
+                <button className="ui-button ui-button--icon ui-button--small ui-button--ghost" onClick={onToggleCollapsed} title={collapsed ? 'Expand' : 'Collapse'} style={collapseButtonStyle}>
                     {collapsed ? '▲' : '▼'}
                 </button>
             </div>
@@ -68,7 +68,7 @@ function DoneTaskCard({ task, column, styles, selected, open, dragged, onToggleS
             opacity: dragged ? 0.4 : 1, borderLeft: `4px solid ${agentColor}`,
             outline: open ? `2px solid ${agentColor}` : 'none',
             backgroundColor: selected ? 'var(--surface-hover)' : 'var(--surface-raised)',
-            boxShadow: selected ? '0 0 0 2px #93c5fd' : undefined }}
+            boxShadow: selected ? '0 0 0 2px var(--accent)' : undefined }}
             draggable onDragStart={(event) => onDragStart(event, task)} onClick={() => onOpen(task)}>
             <input type="checkbox" checked={selected} onChange={() => {}}
                 onClick={(event) => onToggleSelection(task.taskId, event)}
@@ -87,5 +87,4 @@ function DoneTaskCard({ task, column, styles, selected, open, dragged, onToggleS
     );
 }
 
-const collapseButtonStyle = { marginLeft: '4px', background: 'transparent', border: 'none',
-    cursor: 'pointer', fontSize: '12px', color: 'var(--muted)', padding: '2px 6px', borderRadius: '3px', lineHeight: 1 };
+const collapseButtonStyle = { marginLeft: '4px', '--button-text': 'var(--muted)' };

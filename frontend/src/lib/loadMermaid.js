@@ -12,6 +12,8 @@
  * von jedem geladen, der diese Tabs nie öffnet.
  */
 
+import { themeTokens } from '../theme/tokens.js';
+
 let mermaidPromise = null;
 
 /**
@@ -32,7 +34,16 @@ const FRONT_MATTER = /^([^\S\n\r]*)-{3}\s*[\n\r](.*?)[\n\r]\1-{3}\s*[\n\r]+/s;
  * Frontmatter-Block vorne stehen bleibt.
  */
 export function withMermaidTheme(source, theme) {
-    const directive = `%%{init: {'theme':'${theme}'}}%%\n`;
+    const t = themeTokens(theme === 'dark' ? 'dark' : 'light');
+    const config = { theme: 'base', themeVariables: {
+        darkMode: theme === 'dark', background: t.bg, primaryColor: t.surface,
+        primaryTextColor: t.text, primaryBorderColor: t['border-strong'],
+        secondaryColor: t['surface-raised'], tertiaryColor: t['accent-soft'],
+        lineColor: t.muted, textColor: t.text, mainBkg: t.surface,
+        nodeBorder: t['border-strong'], clusterBkg: t.bg, clusterBorder: t.border,
+        edgeLabelBackground: t.surface, titleColor: t.text, fontFamily: 'Inter, system-ui, sans-serif',
+    } };
+    const directive = `%%{init: ${JSON.stringify(config)}}%%\n`;
     const m = FRONT_MATTER.exec(source);
     if (!m) return directive + source;
     return source.slice(0, m[0].length) + directive + source.slice(m[0].length);

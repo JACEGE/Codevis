@@ -90,8 +90,8 @@ export default function EpicGroup({
                 <button
                     onClick={(e) => { e.stopPropagation(); onToggle(group.epicId, !collapsed); }}
                     style={{
-                        border: 'none', background: 'transparent', cursor: 'pointer',
-                        fontSize: 10, color: '#6b7394', padding: 0, width: 12,
+                        border: 'none', "--button-bg": 'transparent', cursor: 'pointer',
+                         "--button-text": "var(--muted)",  width: 12,
                     }}
                 >{collapsed ? '▸' : '▾'}</button>
                 {/* Waehlt ALLE Tasks des Epics aus, auch die in anderen Spalten —
@@ -119,14 +119,14 @@ export default function EpicGroup({
                     onClick={(e) => { e.stopPropagation(); onOpenEpic(group.epicId); }}
                     title="Open epic"
                     style={{
-                        flex: 1, minWidth: 0, fontSize: 11, fontWeight: 600, color: '#1a1a1a',
+                        flex: 1, minWidth: 0, fontSize: 11, fontWeight: 600, color: "var(--text)",
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                         cursor: 'pointer', textDecoration: 'underline',
                         textDecorationColor: accent, textUnderlineOffset: 2,
                     }}
                 >{epic ? epic.title : group.epicTitle}</span>
                 <span style={{
-                    fontSize: 10, color: '#6b7394', fontVariantNumeric: 'tabular-nums',
+                    fontSize: 10, color: "var(--muted)", fontVariantNumeric: 'tabular-nums',
                     whiteSpace: 'nowrap',
                 }}>
                     {/* Wie viele der Tasks HIER liegen, und wie viele das Epic

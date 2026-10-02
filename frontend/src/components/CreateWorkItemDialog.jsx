@@ -61,7 +61,7 @@ export default function CreateWorkItemDialog({ kind, db, onClose, onCreated }) {
                         </select>
                     </label>
                 </fieldset>
-                {error && <p role="alert" style={{ color: '#b91c1c', whiteSpace: 'pre-wrap' }}>{error}</p>}
+                {error && <p role="alert" style={{ color: "var(--danger)", whiteSpace: 'pre-wrap' }}>{error}</p>}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                     <button type="button" disabled={saving} onClick={onClose} style={styles.editBtn}>Cancel</button>
                     <button type="submit" disabled={saving} style={styles.editSaveBtn}>{saving ? 'Creating…' : `Create ${label}`}</button>

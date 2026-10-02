@@ -1,0 +1,73 @@
+/* One control contract, shared by toolbar, form and dialog actions.
+   Small/icon/chip/navigation controls opt into an explicit size or layout. */
+button, .ui-button {
+  min-height: var(--control-height);
+  padding: var(--control-padding);
+  border: 1px solid var(--button-border, var(--border-strong));
+  border-radius: var(--radius-control);
+  background: var(--button-bg, var(--surface));
+  color: var(--button-text, var(--text));
+  font: 550 var(--control-font-size)/1.25 var(--font-family);
+  cursor: pointer;
+  box-shadow: none;
+  transition: background-color .12s, border-color .12s, color .12s;
+}
+button:hover:not(:disabled), .ui-button:hover:not(:disabled) {
+  background: var(--button-hover, var(--surface-hover));
+  border-color: var(--button-border, var(--border-strong));
+}
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+button:disabled { opacity: .5; cursor: not-allowed; }
+.ui-button--primary, .inspector-action-btn, .apply-btn, .changes-view .change-primary {
+  --button-bg: var(--accent-strong); --button-text: var(--on-accent);
+  --button-border: var(--accent-strong); --button-hover: var(--accent-hover);
+}
+.ui-button--danger { --button-bg: var(--danger-soft); --button-text: var(--danger); --button-border: var(--danger); }
+.ui-button[aria-pressed='true'], .mode-btn.active, .db-btn.active, .impact-profile-btn.active,
+.settings-refresh-btn.active, .debug-mode-btn.active, .app-nav-item.active {
+  --button-bg: var(--accent-soft); --button-text: var(--accent); --button-border: var(--accent-border);
+  color: var(--accent); background: var(--accent-soft); border-color: var(--accent-border); box-shadow: none;
+}
+.ui-button--small { --control-height: 28px; --control-padding: 4px 8px; --control-font-size: 12px; }
+.ui-button--icon { width: var(--control-height); padding: 0; flex-shrink: 0; }
+.ui-button--ghost { --button-bg: transparent; --button-border: transparent; }
+.ui-segmented { display: inline-flex; gap: 3px; padding: 2px; border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--bg); }
+.ui-segmented .ui-button { --control-height: 28px; --control-padding: 4px 10px; border-color: transparent; }
+input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea {
+  border: 1px solid var(--border-strong); border-radius: var(--radius-control);
+  color: var(--text); background: var(--bg); font: inherit; padding: var(--control-padding);
+}
+input:not([type='checkbox']):not([type='radio']):not([type='range']), select { min-height: var(--control-height); }
+input[type='checkbox'], input[type='radio'], input[type='range'] { accent-color: var(--accent-strong); }
+::selection { background: var(--selection-bg); }
+/* These are navigation/results, not rectangular action buttons. */
+.node-search-result, .change-catalogue-item, .change-relation, .flow-search-results button { text-align: left; height: auto; }
+.theme-toggle, .workspace-db, .app-nav-section, .mode-btn, .db-btn, .settings-refresh-btn,
+.impact-profile-btn, .inspector-action-btn, .apply-btn, .debug-btn, .debug-mode-btn, .changes-view button {
+  min-height: var(--control-height); border-radius: var(--radius-control); font-size: var(--control-font-size);
+}
+.theme-toggle, .mode-btn, .db-btn, .settings-refresh-btn, .impact-profile-btn, .inspector-action-btn,
+.apply-btn, .debug-btn, .debug-mode-btn {
+  padding: var(--control-padding); border: 1px solid var(--button-border, var(--border-strong));
+  background: var(--button-bg, var(--surface)); color: var(--button-text, var(--text)); box-shadow: none;
+  font: 550 var(--control-font-size)/1.25 var(--font-family);
+}
+.theme-toggle:hover:not(:disabled), .mode-btn:hover:not(:disabled), .db-btn:hover:not(:disabled),
+.settings-refresh-btn:hover:not(:disabled), .impact-profile-btn:hover:not(:disabled), .inspector-action-btn:hover:not(:disabled),
+.apply-btn:hover:not(:disabled), .debug-btn:hover:not(:disabled), .debug-mode-btn:hover:not(:disabled) {
+  background: var(--button-hover, var(--surface-hover));
+}
+.workspace-header .theme-toggle, .workspace-header .ui-button, .workspace-db { min-height: var(--control-height); }
+.changes-view button { padding: var(--control-padding); }
+.changes-view .change-primary { color: var(--on-accent); background: var(--accent-strong); border-color: var(--accent-strong); }
+.changes-view .change-primary:hover { background: var(--accent-hover); }
+.app-nav-dropdown .app-nav-item { border-radius: var(--radius-control); }
+.app-nav-dropdown { box-shadow: var(--shadow-popover); }
+.app-nav-item.active:hover { background: var(--accent-soft); }
+.graph-toolbar button, .graph-toolbar select { min-height: var(--control-height); }
+.kanban-board button { min-height: var(--control-height); }
+.kanban-board .ui-button--small { min-height: 28px; }
+@media (prefers-reduced-motion: reduce) { button, .ui-button { transition: none; } }

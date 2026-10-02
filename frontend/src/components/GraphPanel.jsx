@@ -16,14 +16,14 @@ function NodeActionMenu({ menu, onClose, onInspect, onShowContext, onTraceCodeFl
             position: 'absolute',
             left: 12, right: 12, top: 12,
             zIndex: 110, display: 'flex', flexWrap: 'wrap', gap: 6, padding: 7, borderRadius: 8,
-            background: 'var(--surface,#fff)', border: '1px solid var(--border,#ddd)',
+            background: "var(--surface)", border: "1px solid var(--border)",
             boxShadow: '0 4px 18px rgba(0,0,0,.2)',
         }}>
             <button className="ui-button ui-button--primary" onClick={onInspect}>Inspect</button>
             <button className="ui-button" disabled={pending} onClick={() => onShowContext(menu.nodeId, 1)}>Direct connections</button>
             <button className="ui-button" disabled={pending} onClick={() => onShowContext(menu.nodeId, 2)}>Surrounding context</button>
             <button className="ui-button" disabled={pending} onClick={()=>onTraceCodeFlow(menu.nodeId)}>Trace → CodeFlow context</button>
-            <button aria-label="Close node actions" onClick={onClose} style={{ padding: '6px 8px', cursor: 'pointer' }}>×</button>
+            <button aria-label="Close node actions" onClick={onClose} style={{  cursor: 'pointer' }}>×</button>
         </div>
     );
 }
@@ -158,25 +158,25 @@ export default function GraphPanel({
                 <small>{shownGraph.nodes.length} nodes · {shownGraph.links.length} edges in this perspective</small>
                 {focusNodeId != null && (
                     <button onClick={onClearFocus} title="Show the full graph again" style={{
-                        display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
-                        fontSize: 12.5, fontWeight: 600, color: '#ffffff', background: '#6366f1',
-                        border: 'none', borderRadius: 6, cursor: 'pointer',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.2)', fontFamily: 'inherit',
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        "--button-text": "var(--on-accent)", "--button-bg": "var(--accent-strong)", "--button-hover": "var(--accent-hover)",
+                        border: 'none',  cursor: 'pointer',
+
                     }}>× Clear focus</button>
                 )}
                 {exploreGraphActive && (
                     <button onClick={onClearQuery} title="Return to the full dashboard graph" style={{
-                        padding: '6px 12px', fontSize: 12.5, fontWeight: 600,
-                        color: '#ffffff', background: '#0f766e', border: 'none',
-                        borderRadius: 6, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-                        fontFamily: 'inherit',
+
+                        "--button-text": "var(--on-accent)", "--button-bg": "var(--accent-strong)", "--button-hover": "var(--accent-hover)", border: 'none',
+                         cursor: 'pointer',
+
                     }}>× Clear query graph</button>
                 )}
                 {filteredOutResult && (
                     <div title="Switch these types on in the Filter panel (top right) to see them" style={{
                         maxWidth: 260, padding: '6px 10px', fontSize: 11.5, lineHeight: 1.45,
-                        color: 'var(--text, #1a1a1a)', background: 'var(--surface, #fff)',
-                        border: '1px solid #f59e0b', borderRadius: 6,
+                        color: "var(--text)", background: "var(--surface)",
+                        border: "1px solid var(--warning)", borderRadius: 6,
                         boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
                     }}>
                         The filter hides {filteredOutResult.hidden} of {filteredOutResult.total} result nodes: {filteredOutResult.types.join(', ')}

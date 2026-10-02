@@ -83,11 +83,11 @@ export default function IdeaDumpColumn({
 
 function ColumnHeader({ column, count, collapsed, onToggle, styles }) {
     return (
-        <div style={{ ...styles.columnHeader, borderBottomColor: column.color }}>
+        <div style={styles.columnHeader}>
             <span style={{ ...styles.columnDot, backgroundColor: column.color }} />
             <span style={styles.columnLabel}>{column.label}</span>
             <span style={styles.columnCount}>{count}</span>
-            <button onClick={onToggle} title={collapsed ? 'Expand' : 'Collapse'} style={collapseButtonStyle}>
+            <button className="ui-button ui-button--icon ui-button--small ui-button--ghost" onClick={onToggle} title={collapsed ? 'Expand' : 'Collapse'} style={collapseButtonStyle}>
                 {collapsed ? '▼' : '▲'}
             </button>
         </div>
@@ -153,7 +153,7 @@ function IdeaComposer(props) {
                 value={text}
                 onChange={(event) => onTextChange(event.target.value)}
                 aria-label="New idea" placeholder="Drop an idea here..."
-                style={{ ...composerTextareaStyle, border: `1px solid ${column.color}44` }}
+                style={{ ...composerTextareaStyle, border: '1px solid var(--border-strong)' }}
                 onKeyDown={(event) => {
                     if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault();
@@ -175,7 +175,6 @@ function IdeaComposer(props) {
                 disabled={!text.trim()}
                 style={{
                     ...addButtonStyle,
-                    background: text.trim() ? column.color : '#ccc',
                     cursor: text.trim() ? 'pointer' : 'not-allowed',
                 }}
             >
@@ -193,13 +192,14 @@ function IntentControls({ intents, priorityBadges, styles, selected, onToggle, p
                 return (
                     <button
                         key={option.key}
+                        className="ui-button ui-button--small"
                         aria-pressed={active}
                         onClick={() => onToggle(option.key)}
                         title={`Mark as ${option.label}`}
                         style={{
                             ...styles.intentChip,
-                            background: active ? option.color : 'transparent',
-                            color: active ? '#fff' : 'var(--muted)',
+                            "--button-bg": active ? 'var(--accent-soft)' : 'transparent',
+                            "--button-text": active ? 'var(--accent)' : 'var(--muted)',
                             borderColor: active ? option.color : 'var(--border)',
                         }}
                     >
@@ -213,7 +213,7 @@ function IntentControls({ intents, priorityBadges, styles, selected, onToggle, p
                 aria-label="Priority"
                 style={{
                     ...styles.intentPriority,
-                    color: priorityBadges[priority] ? '#fff' : 'var(--muted)',
+                    color: 'var(--text)',
                     background: priorityBadges[priority]?.bg || 'transparent',
                     borderColor: priorityBadges[priority]?.bg || 'var(--border)',
                 }}
@@ -227,15 +227,15 @@ function IntentControls({ intents, priorityBadges, styles, selected, onToggle, p
     );
 }
 
-const collapseButtonStyle = { marginLeft: '4px', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--muted)', padding: '2px 6px', borderRadius: '3px', lineHeight: 1 };
+const collapseButtonStyle = { marginLeft: '4px', '--button-text': 'var(--muted)' };
 const editTextareaStyle = { width: '100%', minHeight: '50px', fontSize: '12px', fontFamily: 'inherit', padding: '4px', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text)', boxSizing: 'border-box', resize: 'vertical' };
 const composerTextareaStyle = { width: '100%', minHeight: '44px', fontSize: '12px', fontFamily: 'inherit', padding: '6px', borderRadius: '5px', boxSizing: 'border-box', resize: 'vertical', backgroundColor: 'var(--surface-raised)', color: 'var(--text)' };
 const editActionsStyle = { display: 'flex', gap: '4px', marginTop: '4px' };
 const cardActionsStyle = { display: 'flex', gap: '6px', justifyContent: 'flex-end' };
 const intentRowStyle = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px', marginTop: '3px', marginBottom: '4px' };
 const ideaContentStyle = { fontSize: '12px', color: 'var(--text)', overflowWrap: 'anywhere', lineHeight: 1.4, marginBottom: '4px' };
-const saveButtonStyle = { fontSize: '10px', padding: '2px 8px', background: '#0369a1', color: '#fff', border: 'none', borderRadius: '3px', cursor: 'pointer' };
-const cancelButtonStyle = { fontSize: '10px', padding: '2px 8px', background: 'var(--surface-raised)', color: 'var(--text)', border: 'none', borderRadius: '3px', cursor: 'pointer' };
-const editButtonStyle = { fontSize: '10px', color: '#0369a1', background: 'transparent', border: 'none', cursor: 'pointer' };
-const deleteButtonStyle = { fontSize: '10px', color: '#dc2626', background: 'transparent', border: 'none', cursor: 'pointer' };
-const addButtonStyle = { marginTop: '3px', fontSize: '11px', padding: '3px 10px', color: '#fff', border: 'none', borderRadius: '4px' };
+const saveButtonStyle = { '--button-bg': 'var(--accent-strong)', '--button-text': 'var(--on-accent)', '--button-hover': 'var(--accent-hover)' };
+const cancelButtonStyle = {};
+const editButtonStyle = { '--button-text': 'var(--accent)' };
+const deleteButtonStyle = { '--button-text': 'var(--danger)' };
+const addButtonStyle = { ...saveButtonStyle, marginTop: 'var(--space-1)' };

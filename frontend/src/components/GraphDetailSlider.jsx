@@ -31,8 +31,6 @@ const HINTS = {
   3: '⚠ Adds every syntax-tree node. Dwarfs the rest; the first load is slow',
 };
 
-const ACCENT = '#6366f1';
-
 // `embedded` drops the card chrome and the heading: inside the Settings tab the
 // surrounding section already provides both, and a card within a card reads as
 // two separate controls.
@@ -50,8 +48,8 @@ export default function GraphDetailSlider({ level, onLevelChange, embedded = fal
         flexDirection: 'column',
         gap: 6,
         padding: '8px 10px',
-        background: 'var(--surface, #ffffff)',
-        border: '1px solid var(--border, #e0e0e0)',
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
         borderRadius: 8,
         fontSize: 12,
         userSelect: 'none',
@@ -60,55 +58,25 @@ export default function GraphDetailSlider({ level, onLevelChange, embedded = fal
     >
       {/* Label row */}
       {!embedded && (
-        <div style={{ fontWeight: 600, color: 'var(--text, #1a1a1a)', marginBottom: 2 }}>
+        <div style={{ fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>
           Detail level
         </div>
       )}
 
       {/* Segmented control */}
-      <div
-        style={{
-          display: 'flex',
-          borderRadius: 6,
-          overflow: 'hidden',
-          border: '1px solid var(--border, #e0e0e0)',
-        }}
-      >
-        {LEVELS.map(({ value, label }, idx) => {
+      <div className="ui-segmented" role="group" aria-label="Graph detail level">
+        {LEVELS.map(({ value, label }) => {
           const active = value === level;
           return (
             <button
               key={value}
+              className="ui-button"
               aria-pressed={active}
               onClick={() => onLevelChange(value)}
               title={HINTS[value]}
               style={{
                 flex: 1,
-                minHeight: 34,
-                padding: '6px 5px',
-                fontSize: 12,
-                fontWeight: active ? 700 : 400,
-                cursor: 'pointer',
-                border: 'none',
-                borderLeft: idx > 0 ? '1px solid var(--border, #e0e0e0)' : 'none',
-                borderRadius: 0,
-                background: active ? ACCENT : 'var(--surface, #ffffff)',
-                color: active ? '#ffffff' : 'var(--muted, #888)',
-                transition: 'background 0.15s, color 0.15s',
                 whiteSpace: 'nowrap',
-                outline: 'none',
-              }}
-              onMouseEnter={e => {
-                if (!active) {
-                  e.currentTarget.style.background = '#f0f0ff';
-                  e.currentTarget.style.color = ACCENT;
-                }
-              }}
-              onMouseLeave={e => {
-                if (!active) {
-                  e.currentTarget.style.background = 'var(--surface, #ffffff)';
-                  e.currentTarget.style.color = 'var(--muted, #888)';
-                }
               }}
             >
               {label}
@@ -121,7 +89,7 @@ export default function GraphDetailSlider({ level, onLevelChange, embedded = fal
       <div
         style={{
           fontSize: 12,
-          color: level === 3 ? '#e67e22' : 'var(--muted, #888)',
+          color: level === 3 ? 'var(--warning)' : 'var(--muted)',
           fontStyle: 'italic',
           minHeight: 14,
           lineHeight: 1.4,

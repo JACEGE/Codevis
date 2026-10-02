@@ -8,6 +8,7 @@ import { buildLinkLabel, buildNodeLabel, getLinkWidth } from '../graph/presentat
 import { clearTextSpriteCache, disposeResourceMap, makeTextSprite } from '../graph/threeResources';
 import useForceLayout from '../hooks/useForceLayout';
 import useTheme from '../hooks/useTheme';
+import { themeTokens } from '../theme/tokens';
 
 // Above this node count the 3D path stops minting a text sprite per domain node
 // (each sprite is its own canvas texture). Emphasised/hub/conflict nodes keep
@@ -87,7 +88,7 @@ const EDGE_ACTIVE_COLORS = {
     default: '#ffaa00'
 };
 
-const GLOW_INTENSITY = 0.6;
+const GLOW_INTENSITY = 0.18;
 const NODE_BASE_SIZE = 6;
 const DEBUG_ACTIVE_COLOR = '#ff8c42';
 const DEBUG_TRAIL_COLOR = '#ff6b3d';
@@ -100,8 +101,8 @@ const DEBUG_BRANCH_COLOR = '#ffd700';
 // Text sprite cache — avoids recreating canvases for the same label
 const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, debugPath, debugBranches, debugEdges, freezeLayout, onNodeClick, highlightedNodes, viewMode = '2d', focusNodeId, width, height, fitRequest = 0, active = true }) => {
     const [theme] = useTheme();
-    const darkTheme = theme === 'dark';
-    const graphBackground = darkTheme ? '#0d1426' : '#edf2f8';
+    const colors = themeTokens(theme);
+    const graphBackground = colors['graph-bg'];
     const fgRef = useRef();
     const fg2dRef = useRef();
     const clockRef = useRef(new THREE.Clock());
@@ -111,14 +112,11 @@ const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, 
         renderer?.zoomToFit(350, 40);
     }, [fitRequest, viewMode]);
 
-    // --- Agent lock color system: Lead = gold, Worker = cyan ---
-    const LEAD_COLOR = '#ffd700';
-    const WORKER_COLOR = '#84cc16';
+    // Lock roles use the same theme tokens as GraphLegend.
     const getAgentColor = useCallback((agentId) => {
-        if (!agentId) return WORKER_COLOR;
-        if (agentId === 'lead' || agentId.startsWith('lead-')) return LEAD_COLOR;
-        return WORKER_COLOR;
-    }, []);
+        if (agentId === 'lead' || agentId?.startsWith('lead-')) return colors.warning;
+        return colors.info;
+    }, [colors]);
 
     const workflowGeometries = useMemo(() => createWorkflowGeometries(THREE, NODE_BASE_SIZE), []);
     useEffect(() => () => disposeResourceMap(workflowGeometries), [workflowGeometries]);
@@ -274,11 +272,11 @@ const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, 
     // Determine node color — cross-panel highlight > lock status > type labels
     const getNodeColor = useCallback((node) => {
         // Cross-panel hover highlight (highest priority)
-        if (highlightedNodes?.has(node.name)) return '#ffffff';
+        if (highlightedNodes?.has(node.name)) return colors.accent;
         // Lock-status coloring
-        if (node.lockStatus === 'conflict' || node.lockStatus === 'blocked') return '#ff4444';
-        if (node.lockStatus === 'released') return '#39ff85';
-        if (node.lockStatus === 'planned') return '#a855f7';
+        if (node.lockStatus === 'conflict' || node.lockStatus === 'blocked') return colors.danger;
+        if (node.lockStatus === 'released') return colors.success;
+        if (node.lockStatus === 'planned') return colors.violet;
         if (node.locked && node.lockedBy) {
             return getAgentColor(node.lockedBy);
         }
@@ -293,7 +291,7 @@ const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, 
         // sonst sind alle neuen Labels des Builders untereinander und vom
         // Default nicht zu unterscheiden.
         return colorForNode(node, palette);
-    }, [debugNode, debugPathSet, debugBranchSet, getAgentColor, highlightedNodes, palette]);
+    }, [debugNode, debugPathSet, debugBranchSet, getAgentColor, highlightedNodes, palette, colors]);
 
     // Get node size based on type + connectivity + debug emphasis
     const getNodeSize = useCallback((node) => {
@@ -361,16 +359,15 @@ const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, 
                 matCache.current[key] = new THREE.MeshPhongMaterial({
                     color: new THREE.Color(color),
                     emissive: new THREE.Color(color),
-                    emissiveIntensity: 0.4,
+                    emissiveIntensity: emissiveInt,
                     transparent: true,
                     opacity: opacity,
-                    shininess: 80
+                    shininess: 20
                 });
             }
         }
         return matCache.current[key];
     }, []);
-
 
     // Custom Three.js node — full debug visuals + lock-status visuals
     const nodeThreeObject = useCallback((node) => {
@@ -410,8 +407,8 @@ const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, 
         if (isConflict) {
             // Dedicated material for animation — do NOT cache this
             coreMaterial = new THREE.MeshPhongMaterial({
-                color: new THREE.Color('#ff4444'),
-                emissive: new THREE.Color('#ff4444'),
+                color: new THREE.Color(colors.danger),
+                emissive: new THREE.Color(colors.danger),
                 emissiveIntensity: GLOW_INTENSITY,
                 transparent: true,
                 opacity: coreOpacity,
@@ -458,7 +455,7 @@ const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, 
             || node.lockStatus === 'planned' || highlightedNodes?.has(node.name);
         const isHub = (degreeById.get(node.id) || 0) >= 8;
         if (node.name && (isEmphasised || isHub || smallGraph || (isDomainNode && labelBudgetOk))) {
-            const label = makeTextSprite(node.name, color);
+            const label = makeTextSprite(node.name, colors.text);
             label.position.set(0, size + 4, 0);
             group.add(label);
         }
@@ -515,7 +512,7 @@ const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, 
         if (isConflict) {
             const conflictRingGeo = new THREE.TorusGeometry(size * 2.4, 0.5, 12, 48);
             const conflictRingMat = new THREE.MeshBasicMaterial({
-                color: new THREE.Color('#ff4444'),
+                color: new THREE.Color(colors.danger),
                 transparent: true,
                 opacity: 0.7,
                 side: THREE.DoubleSide
@@ -549,7 +546,7 @@ const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, 
             if (isLead) {
                 const ringGeo = new THREE.TorusGeometry(size * 1.8, 0.35, 12, 48);
                 const ringMat = new THREE.MeshBasicMaterial({
-                    color: new THREE.Color(LEAD_COLOR),
+                    color: new THREE.Color(colors.warning),
                     transparent: true,
                     opacity: 0.4,
                     side: THREE.DoubleSide
@@ -566,7 +563,7 @@ const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, 
         if (node.lockStatus === 'planned') {
             const edgesGeo = new THREE.EdgesGeometry(getSharedGeometry(size * 1.2, 12));
             const dashedMat = new THREE.LineDashedMaterial({
-                color: new THREE.Color('#a855f7'),
+                color: new THREE.Color(colors.violet),
                 dashSize: 0.15,
                 gapSize: 0.08,
                 transparent: true,
@@ -587,8 +584,6 @@ const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, 
         // would restyle every OTHER node that happens to share the same cache
         // key, which is how one Epic could dim a screenful of functions.
         if (!isEpic) coreMaterial.opacity = targetOpacity;
-
-
 
         // Animate the group on each frame
         const needsAnimation = isDebugActive || isBranch || isConflict || isLocked;
@@ -648,9 +643,7 @@ const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, 
         }
 
         return group;
-    }, [getNodeColor, getNodeSize, debugNode, debugBranchSet, debugPathSet, highlightedNodes, degreeById, smallGraph, labelBudgetOk]);
-
-
+    }, [getNodeColor, getNodeSize, debugNode, debugBranchSet, debugPathSet, highlightedNodes, degreeById, smallGraph, labelBudgetOk, colors]);
 
     // Handle node click
     const lastLibClickRef = useRef(0);
@@ -795,7 +788,7 @@ const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, 
 
         ctx.save();
         ctx.fillStyle = color;
-        ctx.strokeStyle = darkTheme ? 'rgba(226,232,240,0.34)' : 'rgba(30,41,59,0.28)';
+        ctx.strokeStyle = colors['graph-outline'];
         ctx.lineWidth = 0.6;
 
         if (paintWorkflowNode(ctx, workflowType(labels), node.x, node.y, r)) {
@@ -834,15 +827,15 @@ const GraphScene = ({ graphData, palette = NODE_COLORS, activeLinks, debugNode, 
             const tw = ctx.measureText(text).width;
             const pad = 2 / globalScale;
             const ly = node.y + r + fontSize * 0.95;
-            ctx.fillStyle = darkTheme ? 'rgba(17,24,42,0.92)' : 'rgba(255,255,255,0.92)';
+            ctx.fillStyle = colors['graph-label-bg'];
             ctx.fillRect(node.x - tw / 2 - pad, ly - fontSize / 2 - pad, tw + 2 * pad, fontSize + 2 * pad);
-            ctx.fillStyle = darkTheme ? '#e7edf8' : '#182234';
+            ctx.fillStyle = colors.text;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(text, node.x, ly);
         }
         ctx.restore();
-    }, [getNodeColor, getNodeSize, highlightedNodes, debugNode, darkTheme]);
+    }, [getNodeColor, getNodeSize, highlightedNodes, debugNode, colors]);
 
     // Hit-Area für Klicks (umschließt die Custom-Shapes großzügig)
     const nodePointerAreaPaint = useCallback((node, color, ctx, globalScale) => {

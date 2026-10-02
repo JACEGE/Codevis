@@ -23,28 +23,28 @@ import styles from '../kanban/styles';
 // Idea Dump sits left of all task columns. It is intentionally NOT in the
 // COLUMNS array because ideas are a different entity type (different endpoints,
 // no drag-to-task-column, inline CRUD instead of a detail modal).
-const IDEA_COLUMN = { key: 'idea_dump', label: 'Idea Dump', color: '#f59e0b' };
+const IDEA_COLUMN = { key: 'idea_dump', label: 'Idea Dump', color: "var(--warning)" };
 
 // Was aus einer Idee werden soll. Mehrfachauswahl, weil aus einem Zettel oft
 // beides fällt — eine Aufgabe UND das Wissen, warum sie so gelöst wird.
 // Die Auswahl ist eine Notiz, keine Umwandlung: die passiert weiterhin bewusst
 // (promote_idea_to_task). Deshalb Chips zum Umschalten, kein "Convert"-Knopf.
 const IDEA_INTENTS = [
-    { key: 'task', label: 'Task', color: '#0369a1' },
-    { key: 'epic', label: 'Epic', color: '#7c3aed' },
-    { key: 'knowledge', label: 'Know', color: '#0d9488' },
-    { key: 'epic-tasks', label: 'Epic + Tasks', color: '#7c3aed' },
-    { key: 'codeflow', label: 'CodeFlow', color: '#b45309' },
+    { key: 'task', label: 'Task', color: "var(--info)" },
+    { key: 'epic', label: 'Epic', color: "var(--violet)" },
+    { key: 'knowledge', label: 'Know', color: "var(--success)" },
+    { key: 'epic-tasks', label: 'Epic + Tasks', color: "var(--violet)" },
+    { key: 'codeflow', label: 'CodeFlow', color: "var(--warning)" },
 ];
 
 const COLUMNS = [
-    { key: 'backlog', label: 'Backlog', color: '#6b7394' },
-    { key: 'todo', label: 'To Do', color: '#00dcff' },
-    { key: 'in_progress', label: 'In Progress', color: '#ff8c42' },
-    { key: 'blocked', label: 'Blocked', color: '#ff4444' },
-    { key: 'needs_info', label: 'Needs Info', color: '#ffcc00' },
-    { key: 'review', label: 'Review', color: '#a855f7' },
-    { key: 'done', label: 'Done', color: '#39ff85' },
+    { key: 'backlog', label: 'Backlog', color: "var(--muted)" },
+    { key: 'todo', label: 'To Do', color: "var(--info)" },
+    { key: 'in_progress', label: 'In Progress', color: "var(--warning)" },
+    { key: 'blocked', label: 'Blocked', color: "var(--danger)" },
+    { key: 'needs_info', label: 'Needs Info', color: "var(--warning)" },
+    { key: 'review', label: 'Review', color: "var(--violet)" },
+    { key: 'done', label: 'Done', color: "var(--success)" },
 ];
 
 /**
@@ -72,12 +72,11 @@ const COLUMN_SPAN = {
 };
 
 const PRIORITY_BADGE = {
-    critical: { label: 'CRIT', bg: '#ff4444' },
-    high: { label: 'HIGH', bg: '#ff8c42' },
-    medium: { label: 'MED', bg: '#6b7394' },
-    low: { label: 'LOW', bg: '#3a3f55' },
+    critical: { label: 'CRIT', bg: 'var(--danger-soft)' },
+    high: { label: 'HIGH', bg: 'var(--warning-soft)' },
+    medium: { label: 'MED', bg: 'var(--surface-hover)' },
+    low: { label: 'LOW', bg: 'var(--surface-raised)' },
 };
-
 
 export default function KanbanBoard({ onCardHover, db: dbProp, socket, onShowNode, onOpenFlow }) {
     const [promotionIdea,setPromotionIdea]=useState(null);
@@ -198,9 +197,6 @@ export default function KanbanBoard({ onCardHover, db: dbProp, socket, onShowNod
         onError: reportWriteError,
     });
 
-
-
-
     const tasksByStatus = indexTasksByStatus(tasks, COLUMNS.map((column) => column.key));
 
     const EPIC_ACCENT = colorForLabel('Epic');
@@ -253,7 +249,7 @@ export default function KanbanBoard({ onCardHover, db: dbProp, socket, onShowNod
                 <h1 style={styles.title}>Kanban</h1>
                 <div style={{
                     ...styles.connectionDot,
-                    backgroundColor: connected == null ? '#f59e0b' : connected ? '#22c55e' : '#ef4444'
+                    backgroundColor: connected == null ? 'var(--warning)' : connected ? 'var(--success)' : 'var(--danger)'
                 }} />
                 <span style={styles.connectionText}>
                     {connected == null ? 'Connecting' : connected ? 'Live' : 'Disconnected'}
@@ -324,7 +320,7 @@ export default function KanbanBoard({ onCardHover, db: dbProp, socket, onShowNod
                     {moveResult && (
                         <span style={{
                             fontSize: '12px',
-                            color: moveResult.failedIds.length > 0 ? '#dc2626' : '#16a34a',
+                            color: moveResult.failedIds.length > 0 ? "var(--danger)" : "var(--success)",
                             fontWeight: 600,
                         }}>
                             {moveResult.moved} of {moveResult.total} moved
@@ -345,7 +341,7 @@ export default function KanbanBoard({ onCardHover, db: dbProp, socket, onShowNod
                     title="Click to dismiss"
                     style={{
                         margin: '4px 8px', padding: '6px 10px', fontSize: 12,
-                        color: '#fff', background: '#dc2626', borderRadius: 6,
+                        color: 'var(--danger)', background: 'var(--danger-soft)', borderRadius: 6,
                         cursor: 'pointer', fontWeight: 600,
                     }}
                 >

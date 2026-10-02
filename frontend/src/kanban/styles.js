@@ -1,3 +1,4 @@
+import { controlStyle, buttonStyle } from '../theme/tokens.js';
 export const GRID_COLUMNS = 12;
 
 const styles = {
@@ -51,40 +52,26 @@ const styles = {
         alignItems: 'center',
         gap: '8px',
         padding: '5px 16px',
-        backgroundColor: '#fff9e6',
-        borderBottom: '1px solid #f0e0b0',
+        backgroundColor: "var(--warning-soft)",
+        borderBottom: "1px solid var(--warning)",
         flexShrink: 0,
         flexWrap: 'wrap',
     },
     bulkCount: {
         fontSize: '12px',
         fontWeight: 700,
-        color: '#92400e',
+        color: "var(--warning)",
     },
     bulkSelect: {
         fontSize: '12px',
         padding: '2px 6px',
-        border: '1px solid #d0c0a0',
+        border: "1px solid var(--warning)",
         borderRadius: '4px',
         backgroundColor: 'var(--surface-raised)',
         cursor: 'pointer',
     },
-    bulkMoveBtn: {
-        fontSize: '12px',
-        padding: '3px 10px',
-        backgroundColor: '#0369a1',
-        color: '#fff',
-        border: 'none',
-        borderRadius: '4px',
-    },
-    bulkClearBtn: {
-        fontSize: '12px',
-        padding: '3px 8px',
-        backgroundColor: 'var(--surface-raised)',
-        border: 'none',
-        borderRadius: '4px',
-        cursor: 'pointer',
-    },
+    bulkMoveBtn: { ...controlStyle, ...buttonStyle('primary') },
+    bulkClearBtn: { ...controlStyle, ...buttonStyle('default') },
     // Slim strip between header and board. flexShrink:0 keeps it from being
     // squeezed away by the flex:1 board below it.
     emptyHint: {
@@ -134,7 +121,7 @@ const styles = {
         alignItems: 'center',
         gap: '4px',
         padding: '8px 7px',
-        borderBottom: '2px solid',
+        borderBottom: '1px solid var(--border)',
         backgroundColor: 'var(--surface-raised)',
     },
     columnDot: {
@@ -170,31 +157,21 @@ const styles = {
     // schmale Spalte passen, ohne die Karte zu dominieren — die Idee selbst
     // bleibt die Hauptsache.
     intentChip: {
-        fontSize: '11px',
-        fontWeight: 600,
-        letterSpacing: '0.3px',
-        padding: '1px 6px',
-        borderRadius: '9px',
+        ...controlStyle,
         border: '1px solid',
-        cursor: 'pointer',
-        lineHeight: 1.6,
     },
     intentPriority: {
-        fontSize: '11px',
-        fontWeight: 600,
-        letterSpacing: '0.3px',
-        padding: '1px 3px',
-        borderRadius: '9px',
+        ...controlStyle,
+        '--control-height': '28px',
+        '--control-padding': '4px 8px',
+        '--control-font-size': '12px',
         border: '1px solid',
         cursor: 'pointer',
-        lineHeight: 1.6,
         marginLeft: 'auto',
         appearance: 'none',
         WebkitAppearance: 'none',
     },
-    // Das Feld selbst trägt weiße Schrift auf der Prio-Farbe. Die
-    // aufgeklappte Liste erbt das und wäre weiß auf weiß — die Optionen
-    // setzen ihre Farben deshalb selbst.
+    // Native options need explicit theme colours as well as the closed select.
     intentPriorityOption: {
         color: 'var(--text)',
         backgroundColor: 'var(--surface)',
@@ -206,7 +183,6 @@ const styles = {
         backgroundColor: 'var(--surface-raised)',
         borderRadius: '5px',
         padding: '8px 10px',
-        borderLeft: '4px solid',
         border: '1px solid var(--border)',
         cursor: 'grab',
         transition: 'box-shadow 0.1s',
@@ -276,9 +252,9 @@ const styles = {
     },
     confirmError: {
         fontSize: '12px',
-        color: '#b91c1c',
-        backgroundColor: '#fef2f2',
-        border: '1px solid #fecaca',
+        color: "var(--danger)",
+        backgroundColor: "var(--danger-soft)",
+        border: "1px solid var(--danger)",
         borderRadius: '6px',
         padding: '8px 10px',
         marginBottom: '12px',
@@ -288,25 +264,8 @@ const styles = {
         justifyContent: 'flex-end',
         gap: '8px',
     },
-    confirmCancel: {
-        fontSize: '13px',
-        padding: '7px 14px',
-        borderRadius: '6px',
-        border: '1px solid var(--border)',
-        backgroundColor: 'var(--surface-raised)',
-        color: 'var(--text)',
-        cursor: 'pointer',
-    },
-    confirmDelete: {
-        fontSize: '13px',
-        fontWeight: 600,
-        padding: '7px 14px',
-        borderRadius: '6px',
-        border: 'none',
-        backgroundColor: '#dc2626',
-        color: '#fff',
-        cursor: 'pointer',
-    },
+    confirmCancel: { ...controlStyle, ...buttonStyle('default') },
+    confirmDelete: { ...controlStyle, ...buttonStyle('danger') },
     priorityBadge: {
         flexShrink: 0,
         whiteSpace: 'nowrap',
@@ -314,7 +273,7 @@ const styles = {
         fontWeight: 700,
         padding: '1px 5px',
         borderRadius: '3px',
-        color: '#fff',
+        color: "var(--text)",
         letterSpacing: '0.5px',
     },
     cardTitle: {
@@ -349,18 +308,18 @@ const styles = {
     },
     category: {
         fontSize: '10px',
-        color: '#7c3aed',
-        backgroundColor: 'rgba(124,58,237,0.08)',
+        color: "var(--violet)",
+        backgroundColor: "var(--violet-soft)",
         padding: '1px 5px',
         borderRadius: '3px',
     },
     comment: {
         marginTop: '5px',
         fontSize: '10px',
-        color: '#b45309',
+        color: "var(--warning)",
         fontStyle: 'italic',
         padding: '3px 5px',
-        backgroundColor: 'rgba(251,191,36,0.1)',
+        backgroundColor: "var(--warning-soft)",
         borderRadius: '3px',
     },
     overlay: {
@@ -422,7 +381,7 @@ const styles = {
     },
     detailStatus: {
         fontSize: '11px',
-        color: '#0369a1',
+        color: "var(--info)",
         backgroundColor: 'rgba(3,105,161,0.1)',
         padding: '2px 8px',
         borderRadius: '3px',
@@ -430,15 +389,15 @@ const styles = {
     },
     detailAssignee: {
         fontSize: '11px',
-        color: '#c2410c',
-        backgroundColor: 'rgba(194,65,12,0.08)',
+        color: "var(--warning)",
+        backgroundColor: "var(--warning-soft)",
         padding: '2px 8px',
         borderRadius: '3px',
     },
     detailCategory: {
         fontSize: '11px',
-        color: '#7c3aed',
-        backgroundColor: 'rgba(124,58,237,0.08)',
+        color: "var(--violet)",
+        backgroundColor: "var(--violet-soft)",
         padding: '2px 8px',
         borderRadius: '3px',
     },
@@ -486,8 +445,8 @@ const styles = {
     nodeLabel: {
         fontSize: '9px',
         fontWeight: 700,
-        color: '#7c3aed',
-        backgroundColor: 'rgba(124,58,237,0.1)',
+        color: "var(--violet)",
+        backgroundColor: "var(--violet-soft)",
         padding: '1px 5px',
         borderRadius: '2px',
         textTransform: 'uppercase',
@@ -510,8 +469,8 @@ const styles = {
     },
     detailComment: {
         fontSize: '12px',
-        color: '#b45309',
-        backgroundColor: 'rgba(251,191,36,0.1)',
+        color: "var(--warning)",
+        backgroundColor: "var(--warning-soft)",
         padding: '8px 12px',
         borderRadius: '6px',
         fontStyle: 'italic',
@@ -531,27 +490,8 @@ const styles = {
         paddingBottom: '14px',
         borderBottom: '1px solid var(--border)',
     },
-    editBtn: {
-        fontSize: '12px',
-        fontWeight: 600,
-        padding: '6px 14px',
-        borderRadius: '6px',
-        border: '1px solid #bfdbfe',
-        backgroundColor: '#eff6ff',
-        color: '#0369a1',
-        cursor: 'pointer',
-    },
-    detailDeleteBtn: {
-        fontSize: '12px',
-        fontWeight: 600,
-        padding: '6px 14px',
-        borderRadius: '6px',
-        border: '1px solid #fecaca',
-        backgroundColor: '#fef2f2',
-        color: '#dc2626',
-        cursor: 'pointer',
-        marginLeft: 'auto',
-    },
+    editBtn: { ...controlStyle, ...buttonStyle('default') },
+    detailDeleteBtn: { ...controlStyle, ...buttonStyle('danger'), marginLeft: 'auto' },
     editLabel: {
         fontSize: '10px',
         fontWeight: 700,
@@ -585,15 +525,7 @@ const styles = {
         backgroundColor: 'var(--surface-raised)',
         color: 'var(--text)',
     },
-    editSaveBtn: {
-        fontSize: '13px',
-        fontWeight: 600,
-        padding: '7px 16px',
-        borderRadius: '6px',
-        border: 'none',
-        backgroundColor: '#0369a1',
-        color: '#fff',
-    },
+    editSaveBtn: { ...controlStyle, ...buttonStyle('primary') },
 };
 
 export default styles;

@@ -60,3 +60,26 @@ test('stale-edit recovery finds only the crashed agent\'s backups of that file, 
     assert.deepEqual(latestBackupsFor(entries, 'src/app.js', 'worker-1', root), [`${newer}.bak`, `${older}.bak`]);
     assert.deepEqual(latestBackupsFor(entries, 'src/app.js', '', root), []);
 });
+
+test('Windows backups match canonical roots and retain legacy short-path tokens', { skip: process.platform !== 'win32' }, t => {
+    const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'codevis-backup-alias-'));
+    const canonical = fs.realpathSync.native(root);
+    const previous = process.env.CODEVIS_PROJECT_DIR;
+    process.env.CODEVIS_PROJECT_DIR = root;
+    t.after(() => {
+        if (previous === undefined) delete process.env.CODEVIS_PROJECT_DIR;
+        else process.env.CODEVIS_PROJECT_DIR = previous;
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+    fs.writeFileSync(path.join(root, 'app.js'), 'function app() {}');
+    const { createBackupToken, backupFileMatches } = require('../tools/lib/edit-backups.cjs');
+    const token = createBackupToken('app.js', 'agent', root);
+    assert.equal(backupFileMatches(token, 'app.js', canonical), true);
+    const { resolvePhysicalPath } = require('../lib/file-publication.cjs');
+    const oldHash = require('node:crypto').createHash('sha256')
+        .update(resolvePhysicalPath(path.join(root, 'app.js')).toLowerCase()).digest('hex');
+    const legacy = token.replace(/_f-[a-f0-9]{64}_/, `_f-${oldHash}_`);
+    assert.equal(backupFileMatches(legacy, 'app.js', canonical), true);
+    assert.equal(backupFileMatches(legacy, path.join(canonical, 'app.js'), canonical), true);
+    assert.equal(backupFileMatches(legacy, 'app.js', path.join(canonical, 'other-project')), false);
+});

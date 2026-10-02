@@ -13,6 +13,7 @@ const { runChecks } = require('../lib/workflow/checks.cjs');
 const { parseTestReport } = require('../lib/workflow/test-report.cjs');
 const { testResults } = require('../lib/workflow/test-results.cjs');
 const { requirements } = require('./helpers/workflow.cjs');
+const { SKIP_WITHOUT_FILE_SYMLINKS } = require('./helpers/symlinks.cjs');
 const reporter = require('node:url').pathToFileURL(path.resolve(__dirname, '../lib/workflow/node-test-reporter.cjs')).href;
 
 test('reports reject malformed, oversized and invalid observations without inferring passes', () => {
@@ -25,7 +26,7 @@ test('reports reject malformed, oversized and invalid observations without infer
   assert.equal(result.tests[0].status,'skipped');
 });
 
-async function fixture() {
+async function fixture(workflow = {}) {
   const db = await openTestDb();
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(),'codeflow-results-'));
   execFileSync('git',['init','--quiet'],{cwd:projectRoot,windowsHide:true});
@@ -36,7 +37,7 @@ async function fixture() {
     "test('reject reuse',()=>{const used=new Set(); const rotate=t=>{if(used.has(t))throw Error('used');used.add(t);};rotate('token');assert.throws(()=>rotate('token'),/used/);});",
     "test.skip('concurrent reuse',()=>{});",
   ].join('\n'));
-  const config = {workflow:{checks:[{name:'behavior',command:process.execPath,args:['--test','--test-reporter',reporter,'tests/auth.test.cjs'],testReport:'codevis-json'}]}};
+  const config = {workflow:{...workflow,checks:[{name:'behavior',command:process.execPath,args:['--test','--test-reporter',reporter,'tests/auth.test.cjs'],testReport:'codevis-json'}]}};
   const context = {projectRoot,workspace:'project_db',config,sourceDirs:['tests']};
   const state = createChange({slug:'test-results',title:'Refresh token rotation',description:'Reject token reuse and concurrent replay attempts.'});
   state.currentPhase='development';state.phases[4].status='active';
@@ -54,6 +55,36 @@ async function fixture() {
   const bind=bindings=>op('submit',{markdown:'# Development\nMap executable tests to the previously defined token reuse behavior.',data:{summary:'Executable tests protect the public behavior.',validation:'Record exact test selectors and source relationships.'},testBindings:bindings});
   return {db,context,filename,state,op,binding,bind,cleanup:async()=>{await db.cleanup();fs.rmSync(projectRoot,{recursive:true,force:true});}};
 }
+
+test('recorded test results remain current with project-root workflow artifacts', {timeout:60000}, async()=>{
+  const f=await fixture({artifactDir:'.'});
+  try {
+    await f.bind([f.binding]);
+    await f.op('record_quality',{evidence:await runChecks(f.context)});
+    assert.equal((await f.op('read',{view:'tests'})).cases[0].status,'pass');
+    await f.op('resume');
+    assert.equal((await f.op('read',{view:'tests'})).cases[0].status,'pass');
+  } finally { await f.cleanup(); }
+});
+
+test('editing a symlinked dependency invalidates an observed passing test', {timeout:60000,skip:SKIP_WITHOUT_FILE_SYMLINKS}, async()=>{
+  const f=await fixture();
+  try {
+    const root=f.context.projectRoot;
+    fs.mkdirSync(path.join(root,'physical'));
+    fs.writeFileSync(path.join(root,'.gitignore'),'physical/\n');
+    const target=path.join(root,'physical','value.cjs');
+    fs.writeFileSync(target,'module.exports = 42;\n');
+    fs.symlinkSync(target,path.join(root,'linked.cjs'),'file');
+    fs.appendFileSync(f.filename,"\nassert.equal(require('../linked.cjs'),42);\n");
+    await f.bind([f.binding]);
+    await f.op('record_quality',{evidence:await runChecks(f.context)});
+    assert.equal((await f.op('read',{view:'tests'})).cases[0].status,'pass');
+
+    fs.writeFileSync(target,'module.exports = 43;\n');
+    assert.equal((await f.op('read',{view:'tests'})).cases[0].status,'stale');
+  } finally { await f.cleanup(); }
+});
 
 test('real node:test observations survive resume, distinguish skips and invalidate after edits or binding changes', {timeout:60000}, async()=>{
   const f=await fixture();

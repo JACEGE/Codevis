@@ -1,19 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import BRIDGE_URL from '../bridgeUrl';
 import useTheme from '../hooks/useTheme';
+import { terminalTheme } from '../theme/tokens';
 
-const DARK_TERMINAL_THEME = {
-  background: '#0b1020', foreground: '#e7edf8', cursor: '#a5b4fc', cursorAccent: '#0b1020',
-  selectionBackground: '#00dcff44', black: '#0b1020', brightBlack: '#64748b', red: '#ff4444',
-  green: '#39ff85', yellow: '#ff8c42', blue: '#00dcff', magenta: '#a855f7', cyan: '#55e8a0',
-  white: '#cbd5e1', brightWhite: '#f8fafc',
-};
-const LIGHT_TERMINAL_THEME = {
-  background: '#ffffff', foreground: '#182234', cursor: '#4338ca', cursorAccent: '#ffffff',
-  selectionBackground: '#4f46e533', black: '#182234', brightBlack: '#64748b', red: '#dc2626',
-  green: '#15803d', yellow: '#b45309', blue: '#2563eb', magenta: '#7e22ce', cyan: '#0f766e',
-  white: '#e2e8f0', brightWhite: '#ffffff',
-};
+const DARK_TERMINAL_THEME = terminalTheme('dark');
+const LIGHT_TERMINAL_THEME = terminalTheme('light');
 
 export default function TerminalPanel() {
   const [theme] = useTheme();
@@ -141,26 +132,26 @@ export default function TerminalPanel() {
     };
   }, []);
 
-  const statusDot = status === 'connected' ? '#39ff85' : status === 'checking' ? '#ff8c42' : '#ff4444';
+  const statusDot = status === 'connected' ? "var(--success)" : status === 'checking' ? "var(--warning)" : "var(--danger)";
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
         padding: '6px 12px',
-        borderBottom: '1px solid var(--border, #e0e0e0)',
-        fontSize: 12, color: 'var(--muted, #888)',
-        background: 'var(--surface, #ffffff)',
+        borderBottom: "1px solid var(--border)",
+        fontSize: 12, color: "var(--muted)",
+        background: "var(--surface)",
       }}>
         <span style={{
           width: 8, height: 8, borderRadius: '50%',
           background: statusDot, display: 'inline-block'
         }} />
-        <span style={{ fontWeight: 600, color: 'var(--text, #1a1a1a)' }}>Terminal</span>
+        <span style={{ fontWeight: 600, color: "var(--text)" }}>Terminal</span>
         <span>{status}</span>
       </div>
       {status === 'disabled' && (
-        <div style={{ padding: 16, color: 'var(--muted, #888)', fontSize: 13 }}>
+        <div style={{ padding: 16, color: "var(--muted)", fontSize: 13 }}>
           Browser shell is off. Restart with <code>codevis dashboard --web-shell</code> to enable it for this run.
         </div>
       )}

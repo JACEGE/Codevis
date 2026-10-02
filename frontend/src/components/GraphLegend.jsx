@@ -4,11 +4,11 @@ import { useMemo } from 'react';
 import { NODE_COLORS, colorForNode, displayNameForLabel } from '../nodePalette';
 
 const LOCK_ITEMS = [
-    { color: '#a855f7', label: 'Planned', matches: n => n.lockStatus === 'planned' },
-    { color: '#ff4444', label: 'Conflict / blocked', matches: n => ['conflict', 'blocked'].includes(n.lockStatus) },
-    { color: '#39ff85', label: 'Released', matches: n => n.lockStatus === 'released' },
-    { color: '#ffd700', label: 'Locked by lead', matches: n => n.locked && (n.lockedBy === 'lead' || n.lockedBy?.startsWith('lead-')) },
-    { color: '#84cc16', label: 'Locked by worker', matches: n => n.locked && n.lockedBy && n.lockedBy !== 'lead' && !n.lockedBy.startsWith('lead-') },
+    { color: "var(--violet)", label: 'Planned', matches: n => n.lockStatus === 'planned' },
+    { color: "var(--danger)", label: 'Conflict / blocked', matches: n => ['conflict', 'blocked'].includes(n.lockStatus) },
+    { color: "var(--success)", label: 'Released', matches: n => n.lockStatus === 'released' },
+    { color: "var(--warning)", label: 'Locked by lead', matches: n => n.locked && (n.lockedBy === 'lead' || n.lockedBy?.startsWith('lead-')) },
+    { color: 'var(--info)', label: 'Locked by worker', matches: n => n.locked && n.lockedBy && n.lockedBy !== 'lead' && !n.lockedBy.startsWith('lead-') },
 ];
 
 export default function GraphLegend({ nodes = [], palette = {} }) {

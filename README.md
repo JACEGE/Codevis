@@ -30,7 +30,7 @@ Tree-sitter builds the source graph. The dashboard and MCP tools connect it to w
 
 The database is embedded ([Ladybug](https://www.npmjs.com/package/@ladybugdb/core), a KuzuDB fork). CodeVis starts a local daemon as the single database writer; no separate database server installation is required.
 
-Status: beta (`1.0.0-beta.4` in this checkout). Core graph, dashboard, and MCP workflows are usable, while APIs and graph schemas may still change before stable 1.0. Multi-agent locking and wave scheduling remain experimental — see [Limitations](#limitations).
+Status: beta (`1.0.0-beta.5` in this checkout). Core graph, dashboard, and MCP workflows are usable, while APIs and graph schemas may still change before stable 1.0. Multi-agent locking and wave scheduling remain experimental — see [Limitations](#limitations).
 
 ## Guides
 
@@ -205,6 +205,12 @@ Start in **Task board** for understood work, **Ideas** for rough notes, and
 **CodeFlow** for a request that needs requirements and review. Search and the
 shared selection connect these views to the code graph. Back and Forward restore
 navigation context; see [Navigation](docs/NAVIGATION.md).
+
+The dashboard uses a graphite-and-steel-blue dark theme and a matching light
+theme. The **Light / Dark** control in the header switches the whole workspace,
+including graph labels, diagrams and terminal colours, and remembers your choice
+in this browser. Similar actions share the same button shape and interaction
+states; status colours remain reserved for meaningful feedback.
 
 ## How it works
 

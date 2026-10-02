@@ -13,7 +13,7 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, statSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +21,8 @@ import puppeteer from 'puppeteer';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { selectDashboardView } from '../smoke/dashboard-navigation.mjs';
+import { demoEnvironment } from './project-environment.mjs';
+import { waitForDemoDashboard } from './dashboard-ready.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const cli = join(repoRoot, 'bin/codevis.mjs');
@@ -37,13 +39,11 @@ const DETAIL_LABELS = new Set(['Function', 'Method', 'Class', 'File', 'Interface
 const FLOW_LABELS = new Set(['Flow', 'Change', 'Phase', 'Requirement', 'AcceptanceCriterion', 'SourceAnalysis', 'ArchitectureDecision', 'TestCase', 'Function', 'Class', 'File', 'Task']);
 
 function run(args, cwd) {
-    const result = spawnSync(process.execPath, [cli, ...args], { cwd, stdio: 'inherit', env: { ...process.env, CODEVIS_PROJECT_DIR: cwd } });
+    const result = spawnSync(process.execPath, [cli, ...args], { cwd, stdio: 'inherit', windowsHide: true, env: demoEnvironment(cwd) });
     if (result.status !== 0) throw new Error(`codevis ${args.join(' ')} failed with ${result.status}`);
 }
 
-function prepareProject() {
-    // The folder name is what the dashboard shows as the project name.
-    const project = join(mkdtempSync(join(tmpdir(), 'codevis-demo-')), 'harbor-library');
+function prepareProject(project) {
     mkdirSync(project);
     cpSync(join(example, 'src'), join(project, 'src'), { recursive: true });
     cpSync(join(example, 'tests'), join(project, 'tests'), { recursive: true });
@@ -54,15 +54,14 @@ function prepareProject() {
         workMode: 'code', extractors: { ros: false }, autoUpdate: { enabled: false }, locking: { enabled: false },
         knowledge: { paths: [] }, workspaces: { project_db: { sourceDir: ['src', 'tests'], exclude: [] } },
     }, null, 2)};\n`);
-    spawnSync('git', ['init', '-q'], { cwd: project });
-    run(['build', 'full'], project);
-    return project;
+    const git = spawnSync('git', ['init', '-q'], { cwd: project, windowsHide: true });
+    if (git.status !== 0) throw new Error('Could not initialize the demo repository');
 }
 
 async function seed(project) {
     const transport = new StdioClientTransport({
         command: process.execPath, args: [cli, 'start'], cwd: project, stderr: 'ignore',
-        env: { ...process.env, CODEVIS_PROJECT_DIR: project, CODEVIS_AGENT_ID: 'demo-lead', CODEVIS_ROLE: 'lead' },
+        env: { ...demoEnvironment(project), CODEVIS_AGENT_ID: 'demo-lead', CODEVIS_ROLE: 'lead' },
     });
     const client = new Client({ name: 'codevis-demo-seed', version: '1.0.0' });
     await client.connect(transport);
@@ -116,7 +115,7 @@ async function seedFlow(client, flow) {
                 if (context.change.revision > before) { result = { status: 'OK' }; break; }
             }
         }
-        if (result.status === 'GATE_BLOCKED') throw new Error(`CodeFlow gate blocked ${context.instructions.phase}: ${JSON.stringify(result.gate?.failures)}`);
+        if (result.status === 'GATE_BLOCKED') throw new Error(`CodeFlow gate blocked ${context.instructions.phase}: ${JSON.stringify(result.gate)}`);
         context = await call('flow_read', { operation: 'read', slug, view: 'context' });
     };
     for (const { phase, complete = true, taskLinks = [], ...payload } of flow.steps) {
@@ -134,12 +133,13 @@ async function seedFlow(client, flow) {
     }
 }
 
-function startDashboard(project) {
-    return new Promise((resolveUrl, reject) => {
+async function startDashboard(project) {
+    let output = '';
+    let startupError = null;
+    const url = await new Promise((resolveUrl, reject) => {
         const child = spawn(process.execPath, [cli, 'dashboard', '--no-open', '--no-watch'], {
-            cwd: project, env: { ...process.env, CODEVIS_PROJECT_DIR: project }, stdio: ['ignore', 'pipe', 'pipe'],
+            cwd: project, env: demoEnvironment(project), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
         });
-        let output = '';
         const timer = setTimeout(() => reject(new Error('Dashboard did not start:\n' + output)), 120_000);
         const onData = chunk => {
             output += chunk;
@@ -148,8 +148,20 @@ function startDashboard(project) {
         };
         child.stdout.on('data', onData);
         child.stderr.on('data', onData);
-        child.once('exit', code => { clearTimeout(timer); reject(new Error(`Dashboard exited with ${code}:\n${output}`)); });
+        child.once('exit', code => {
+            clearTimeout(timer);
+            startupError = new Error(`Dashboard exited with ${code}:\n${output}`);
+            reject(startupError);
+        });
+        child.once('error', error => { clearTimeout(timer); startupError = error; reject(error); });
     });
+    const address = new URL(url);
+    address.hostname = '127.0.0.1';
+    try {
+        await waitForDemoDashboard(address, { projectRoot: project, dataDir: demoEnvironment(project).CODEVIS_DATA_DIR },
+            { startupError: () => startupError });
+    } catch (error) { throw new Error(`${error.message}\n${output}`); }
+    return address.href;
 }
 
 async function record(baseUrl) {
@@ -241,16 +253,28 @@ async function record(baseUrl) {
     return { recordedAt: new Date().toISOString(), http: [...http.values()], socketIn };
 }
 
-const project = prepareProject();
+const tempRoot = realpathSync.native(mkdtempSync(join(tmpdir(), 'codevis-demo-')));
+// The folder name is what the dashboard shows as the project name.
+const project = join(tempRoot, 'harbor-library');
 let fixtures;
 try {
+    prepareProject(project);
+    console.log(`[demo] isolated project: ${project}; data: ${demoEnvironment(project).CODEVIS_DATA_DIR}`);
+    run(['build', 'full'], project);
     await seed(project);
     const url = await startDashboard(project);
     console.log(`[demo] recording ${url}`);
     fixtures = await record(url);
 } finally {
-    spawnSync(process.execPath, [cli, 'stop'], { cwd: project, stdio: 'ignore', env: { ...process.env, CODEVIS_PROJECT_DIR: project } });
-    try { rmSync(dirname(project), { recursive: true, force: true }); } catch {}
+    if (existsSync(project)) {
+        spawnSync(process.execPath, [cli, 'stop'], { cwd: project, stdio: 'ignore', windowsHide: true, env: demoEnvironment(project) });
+    }
+    // Clean up failures during graph construction too, but only the directory
+    // allocated above, never a resolved link to a different workspace.
+    if (existsSync(tempRoot) && realpathSync.native(tempRoot) === tempRoot && dirname(project) === tempRoot) {
+        try { rmSync(tempRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }); }
+        catch (error) { console.warn(`[demo] temporary files retained at ${tempRoot}: ${error.message}`); }
+    }
 }
 
 const vite = spawnSync('npx', ['vite', 'build', '--mode', 'demo'], { cwd: join(repoRoot, 'frontend'), stdio: 'inherit', shell: process.platform === 'win32' });

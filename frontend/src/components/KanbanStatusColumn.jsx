@@ -45,7 +45,7 @@ export default function KanbanStatusColumn({
             onDragOver={(event) => onDragOver(event, column.key)}
             onDrop={(event) => onDrop(event, column.key)}
         >
-            <div style={{ ...styles.columnHeader, borderBottomColor: column.color }}>
+            <div style={styles.columnHeader}>
                 {taskIds.length > 0 && (
                     <input
                         type="checkbox"
@@ -61,6 +61,7 @@ export default function KanbanStatusColumn({
                 <span style={styles.columnLabel}>{column.label}</span>
                 <span style={styles.columnCount}>{tasks.length}</span>
                 <button
+                    className="ui-button ui-button--icon ui-button--small ui-button--ghost"
                     onClick={onToggleCollapsed}
                     aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${column.label}`}
                     aria-expanded={!collapsed}
@@ -114,12 +115,5 @@ const dragOverStyle = {
 
 const collapseButtonStyle = {
     marginLeft: '4px',
-    background: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: '12px',
-    color: 'var(--muted)',
-    padding: '2px 6px',
-    borderRadius: '3px',
-    lineHeight: 1,
+    '--button-text': 'var(--muted)',
 };

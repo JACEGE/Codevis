@@ -4,21 +4,25 @@ import ForceGraph2D from 'react-force-graph-2d';
 
 import BRIDGE_URL from '../bridgeUrl';
 import useRequestLifetime from '../hooks/useRequestLifetime';
+import useTheme from '../hooks/useTheme';
+import { themeTokens } from '../theme/tokens';
 
 // Colour by spec node label + binding status.
 const SPEC_COLORS = {
-  SpecSequence: '#6366f1', SpecClassDiagram: '#6366f1',
-  SpecParticipant: '#0ea5e9', SpecClass: '#0ea5e9',
-  SpecMessage: '#a855f7', SpecMethod: '#a855f7', SpecRelation: '#f59e0b',
-  default: '#94a3b8',
+  SpecSequence: 'accent', SpecClassDiagram: 'accent',
+  SpecParticipant: 'info', SpecClass: 'info',
+  SpecMessage: 'violet', SpecMethod: 'violet', SpecRelation: 'warning',
+  default: 'muted',
 };
-function pickColor(node) {
-  if (node.status === 'unbound' || node.status === 'ambiguous') return '#ef4444';
-  for (const l of node.labels || []) if (SPEC_COLORS[l]) return SPEC_COLORS[l];
-  return SPEC_COLORS.default;
+function pickColor(node, colors) {
+  if (node.status === 'unbound' || node.status === 'ambiguous') return colors.danger;
+  for (const l of node.labels || []) if (SPEC_COLORS[l]) return colors[SPEC_COLORS[l]];
+  return colors[SPEC_COLORS.default];
 }
 
 function SpecSubgraph({ nodes, edges }) {
+  const [theme] = useTheme();
+  const colors = themeTokens(theme);
   const wrapRef = useRef(null);
   const [size, setSize] = useState({ w: 400, h: 300 });
   useEffect(() => {
@@ -35,7 +39,7 @@ function SpecSubgraph({ nodes, edges }) {
     links: (edges || []).map((e) => ({ source: e.source, target: e.target, relType: e.relType })),
   }), [nodes, edges]);
   const paintNode = useCallback((node, ctx, scale) => {
-    const color = pickColor(node);
+    const color = pickColor(node, colors);
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(node.x, node.y, 5, 0, 2 * Math.PI);
@@ -46,35 +50,35 @@ function SpecSubgraph({ nodes, edges }) {
     ctx.font = `500 ${fontSize}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = 'rgba(228,228,231,0.85)';
+    ctx.fillStyle = colors.text;
     ctx.fillText(short, node.x, node.y + 7 / scale);
-  }, []);
+  }, [colors]);
   return (
-    <div ref={wrapRef} style={{ flex: '1 1 auto', minHeight: 200, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border, #2a2f37)', background: '#0b0e1a' }}>
+    <div ref={wrapRef} style={{ flex: '1 1 auto', minHeight: 200, borderRadius: 'var(--radius-panel)', overflow: 'hidden', border: "1px solid var(--border)", background: 'var(--graph-bg)' }}>
       <ForceGraph2D
         width={size.w} height={size.h} graphData={graphData}
         nodeCanvasObject={paintNode}
-        linkColor={() => 'rgba(148,163,184,0.4)'} linkWidth={1.1}
+        linkColor={() => colors['graph-outline']} linkWidth={1.1}
         linkLabel={(l) => l.relType}
         linkDirectionalArrowLength={4} linkDirectionalArrowRelPos={1}
-        cooldownTicks={100} d3VelocityDecay={0.35} backgroundColor="#0b0e1a"
+        cooldownTicks={100} d3VelocityDecay={0.35} backgroundColor={colors['graph-bg']}
       />
     </div>
   );
 }
 
 const STATUS = {
-  idle: { label: 'Ready', color: '#94a3b8' },
-  deleting: { label: 'Deleting...', color: '#0ea5e9' },
-  sending: { label: 'Importing & overlaying…', color: '#0ea5e9' },
-  waiting: { label: 'Claude is building…', color: '#a855f7' },
-  done: { label: 'Done', color: '#22c55e' },
-  error: { label: 'Error', color: '#ef4444' },
+  idle: { label: 'Ready', color: "var(--muted)" },
+  deleting: { label: 'Deleting...', color: "var(--info)" },
+  sending: { label: 'Importing & overlaying…', color: "var(--info)" },
+  waiting: { label: 'Claude is building…', color: "var(--violet)" },
+  done: { label: 'Done', color: "var(--success)" },
+  error: { label: 'Error', color: "var(--danger)" },
 };
 function StatusPill({ status }) {
   const cfg = STATUS[status] || STATUS.idle;
   return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 999, background: 'rgba(255,255,255,0.04)', border: `1px solid ${cfg.color}55`, color: cfg.color, fontFamily: 'var(--font-mono, monospace)', fontSize: 12, fontWeight: 500 }}>
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 999, background: 'rgba(255,255,255,0.04)', border: `1px solid color-mix(in srgb, ${cfg.color} 33%, transparent)`, color: cfg.color, fontFamily: 'var(--font-mono, monospace)', fontSize: 12, fontWeight: 500 }}>
       <span style={{ width: 8, height: 8, borderRadius: '50%', background: cfg.color, boxShadow: `0 0 6px ${cfg.color}` }} />
       {cfg.label}
     </div>
@@ -132,9 +136,9 @@ function RegionList({ title, items, color }) {
         {title} <span style={{ opacity: 0.7 }}>· {items.length}</span>
       </div>
       {items.length === 0
-        ? <div style={{ fontSize: 12, color: 'var(--muted, #94a3b8)', fontStyle: 'italic' }}>—</div>
+        ? <div style={{ fontSize: 12, color: "var(--muted)", fontStyle: 'italic' }}>—</div>
         : items.map((t, i) => (
-          <div key={i} style={{ fontSize: 12, fontFamily: 'monospace', padding: '2px 8px', borderRadius: 6, background: `${color}14`, border: `1px solid ${color}33`, marginBottom: 3, overflowWrap: 'anywhere' }}>{t}</div>
+          <div key={i} style={{ fontSize: 12, fontFamily: 'monospace', padding: '2px 8px', borderRadius: 6, background: `color-mix(in srgb, ${color} 8%, transparent)`, border: `1px solid color-mix(in srgb, ${color} 20%, transparent)`, marginBottom: 3, overflowWrap: 'anywhere' }}>{t}</div>
         ))}
     </div>
   );
@@ -406,17 +410,17 @@ export default function SpecTab({ socket, db, pendingSpecId, onPendingConsumed }
 
   const panel = {
     display: 'flex', flexDirection: 'column', gap: 12, padding: 16,
-    background: 'var(--surface, #14171c)', border: '1px solid var(--border, #2a2f37)',
+    background: "var(--surface)", border: "1px solid var(--border)",
     borderRadius: 12, minHeight: 0, minWidth: 0, overflow: 'auto',
   };
   const ta = {
     resize: 'vertical', padding: 12, fontSize: 13, lineHeight: 1.5,
-    fontFamily: 'monospace', background: 'var(--bg, #0b0d10)', color: 'var(--text, #e4e4e7)',
-    border: '1px solid var(--border, #2a2f37)', borderRadius: 8, boxSizing: 'border-box', width: '100%',
+    fontFamily: 'monospace', background: "var(--bg)", color: "var(--text)",
+    border: "1px solid var(--border)", borderRadius: 8, boxSizing: 'border-box', width: '100%',
   };
 
   return (
-    <div className="editor-workspace" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 16, padding: 16, height: '100%', boxSizing: 'border-box', background: 'var(--bg, #0b0d10)', color: 'var(--text, #e4e4e7)', overflow: 'hidden' }}>
+    <div className="editor-workspace" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 16, padding: 16, height: '100%', boxSizing: 'border-box', background: "var(--bg)", color: "var(--text)", overflow: 'hidden' }}>
       {/* ── Left: input ── */}
       <div style={panel}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -424,13 +428,13 @@ export default function SpecTab({ socket, db, pendingSpecId, onPendingConsumed }
           <StatusPill status={status} />
         </div>
 
-        <div style={{ fontSize: 12, color: 'var(--muted, #94a3b8)' }}>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>
           Paste a PlantUML / WebSequenceDiagrams (.wsd) diagram — sequence or class. It gets imported and overlaid against the code graph.
         </div>
 
         {specs.length > 0 && (
-          <div style={{ border: '1px solid var(--border,#2a2f37)', borderRadius: 8, background: 'rgba(255,255,255,0.02)' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--muted,#94a3b8)', padding: '8px 10px', display: 'flex', justifyContent: 'space-between' }}>
+          <div style={{ border: "1px solid var(--border)", borderRadius: 8, background: 'rgba(255,255,255,0.02)' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: "var(--muted)", padding: '8px 10px', display: 'flex', justifyContent: 'space-between' }}>
               <span>📚 Saved diagrams</span><span style={{ opacity: 0.6 }}>{specs.length}</span>
             </div>
             <div style={{ maxHeight: 160, overflow: 'auto' }}>
@@ -439,8 +443,8 @@ export default function SpecTab({ socket, db, pendingSpecId, onPendingConsumed }
                 return (
                   <button key={s.specId} type="button" onClick={() => openSpec(s.specId)} disabled={isBusy || openingId === s.specId}
                     title="Reopen this diagram + its overlay (no Claude run)"
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 10px', border: 'none', borderTop: '1px solid var(--border,#23272f)', background: active ? 'rgba(99,102,241,0.12)' : 'transparent', cursor: openingId === s.specId ? 'wait' : 'pointer', textAlign: 'left', color: 'var(--text,#e4e4e7)', fontFamily: 'inherit', fontSize: 12.5 }}>
-                    <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 700, color: '#a5b4fc', background: 'rgba(99,102,241,0.15)', padding: '1px 6px', borderRadius: 4, textTransform: 'uppercase' }}>{s.kind || s.label}</span>
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%',  border: 'none', borderTop: "1px solid var(--border)", "--button-bg": active ? 'rgba(99,102,241,0.12)' : 'transparent', cursor: openingId === s.specId ? 'wait' : 'pointer', textAlign: 'left', "--button-text": "var(--text)",   }}>
+                    <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 700, color: "var(--accent)", background: "var(--accent-soft)", padding: '1px 6px', borderRadius: 4, textTransform: 'uppercase' }}>{s.kind || s.label}</span>
                     <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</span>
                     <span style={{ flexShrink: 0, fontSize: 10, opacity: 0.6 }}>{openingId === s.specId ? '…' : `${s.children} nodes`}</span>
                   </button>
@@ -464,30 +468,30 @@ export default function SpecTab({ socket, db, pendingSpecId, onPendingConsumed }
               <span style={{ flex: 1 }} />
               <button type="button" onClick={syncSpec} disabled={isBusy || !diagram.trim()}
                 title="Update this diagram in the graph and its source file, if available"
-                style={{ fontSize: 12, fontWeight: 600, color: '#fff', background: isBusy || !diagram.trim() ? '#4b5563' : 'linear-gradient(135deg, #0ea5e9, #0369a1)', border: 'none', borderRadius: 6, padding: '5px 12px', cursor: isBusy || !diagram.trim() ? 'not-allowed' : 'pointer' }}>
+                className="ui-button ui-button--primary">
                 💾 Sync changes
               </button>
               {!confirmDelete && (
                 <button type="button" onClick={() => setConfirmDelete(true)} disabled={isBusy}
                   title="Remove this diagram from the graph"
-                  style={{ fontSize: 12, fontWeight: 600, color: '#fca5a5', background: 'transparent', border: '1px solid rgba(239,68,68,0.45)', borderRadius: 6, padding: '5px 12px', cursor: 'pointer' }}>
+                  className="ui-button ui-button--danger">
                   🗑 Delete
                 </button>
               )}
             </div>
             {confirmDelete && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', borderTop: '1px solid rgba(239,68,68,0.25)', paddingTop: 6 }}>
-                <span style={{ fontSize: 12, color: '#fca5a5' }}>
+                <span style={{ fontSize: 12, color: 'var(--danger)' }}>
                   Delete "{openedSpec.title}"? This removes the diagram and its nodes from the graph
                   {openedSpec.sourceFile ? ` — the file ${openedSpec.sourceFile} is kept.` : '.'}
                 </span>
                 <span style={{ flex: 1 }} />
                 <button type="button" onClick={deleteSpec} disabled={isBusy}
-                  style={{ fontSize: 12, fontWeight: 600, color: '#fff', background: '#dc2626', border: 'none', borderRadius: 6, padding: '5px 12px', cursor: 'pointer' }}>
+                  className="ui-button ui-button--danger">
                   {status === 'deleting' ? 'Deleting...' : 'Yes, delete'}
                 </button>
                 <button type="button" onClick={() => setConfirmDelete(false)} disabled={isBusy}
-                  style={{ fontSize: 12, color: 'var(--text,#e4e4e7)', background: 'transparent', border: '1px solid var(--border,#2a2f37)', borderRadius: 6, padding: '5px 12px', cursor: 'pointer' }}>
+                  style={{  "--button-text": "var(--text)", "--button-bg": 'transparent', border: "1px solid var(--border)",   cursor: 'pointer' }}>
                   Cancel
                 </button>
               </div>
@@ -496,12 +500,12 @@ export default function SpecTab({ socket, db, pendingSpecId, onPendingConsumed }
         )}
 
         {syncNote && (
-          <div style={{ fontSize: 12, color: '#86efac', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 6, padding: '6px 10px' }}>
+          <div style={{ fontSize: 12, color: 'var(--success)', background: 'var(--success-soft)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 6, padding: '6px 10px' }}>
             {syncNote}
           </div>
         )}
 
-        <label style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--muted, #94a3b8)' }}>Diagram (WSD / PlantUML)</label>
+        <label style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: "var(--muted)" }}>Diagram (WSD / PlantUML)</label>
         {/* The placeholder used to be the full 12-line SAMPLE diagram. In a
             monospace textarea a complete diagram reads as typed content even in
             placeholder grey — you could not tell the field was empty, and the
@@ -510,17 +514,17 @@ export default function SpecTab({ socket, db, pendingSpecId, onPendingConsumed }
         <textarea aria-label="Diagram draft" value={diagram} onChange={(e) => setDiagram(e.target.value)} className="spec-input"
           placeholder="Paste a PlantUML or .wsd diagram here — or use 'Insert sample' below."
           rows={12} style={{ ...ta, flex: '1 1 auto', minHeight: 220 }} />
-        <button type="button" onClick={() => setDiagram(SAMPLE)} style={{ alignSelf: 'flex-start', fontSize: 12, fontWeight: 600, color: '#a5b4fc', background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.35)', borderRadius: 6, cursor: 'pointer', padding: '4px 10px' }}>Insert sample</button>
+        <button type="button" onClick={() => setDiagram(SAMPLE)} style={{ alignSelf: 'flex-start',   "--button-text": "var(--accent)", "--button-bg": "var(--accent-soft)", border: "1px solid var(--accent-soft)",  cursor: 'pointer',  }}>Insert sample</button>
 
         <details className="editor-options"><summary>Specific instructions (optional)</summary>
-        <label style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--muted, #94a3b8)' }}>Specific instructions (optional)</label>
+        <label style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: "var(--muted)" }}>Specific instructions (optional)</label>
         <textarea aria-label="Specific instructions" value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="The 'why' & rules that don't fit in the diagram — error handling, conventions, constraints. Folded into generated tasks." rows={4} style={{ ...ta, minHeight: 80, fontFamily: 'inherit' }} />
         </details>
 
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
             Type:
-            <select value={kind} onChange={(e) => setKind(e.target.value)} style={{ background: 'var(--bg,#0b0d10)', color: 'var(--text,#e4e4e7)', border: '1px solid var(--border,#2a2f37)', borderRadius: 6, padding: '4px 8px', fontSize: 12 }}>
+            <select value={kind} onChange={(e) => setKind(e.target.value)} style={{ background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: '4px 8px', fontSize: 12 }}>
               <option value="auto">Auto-detect</option>
               <option value="sequence">Sequence</option>
               <option value="class">Class</option>
@@ -544,7 +548,7 @@ export default function SpecTab({ socket, db, pendingSpecId, onPendingConsumed }
           <button className="ui-button" type="button" onClick={reset} disabled={isBusy}>
             Discard draft
           </button>
-          {errorMsg && <span style={{ fontSize: 12, color: '#ef4444' }}>{errorMsg}</span>}
+          {errorMsg && <span style={{ fontSize: 12, color: "var(--danger)" }}>{errorMsg}</span>}
         </div>
       </div>
 
@@ -553,38 +557,38 @@ export default function SpecTab({ socket, db, pendingSpecId, onPendingConsumed }
         <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>🔍 Overlay vs. code</h2>
 
         {!result ? (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 32, color: 'var(--muted, #94a3b8)', fontSize: 14, border: '1px dashed var(--border, #2a2f37)', borderRadius: 8, background: 'rgba(255,255,255,0.02)' }}>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 32, color: "var(--muted)", fontSize: 14, border: "1px dashed var(--border)", borderRadius: 8, background: 'rgba(255,255,255,0.02)' }}>
             Import a diagram on the left — the conformance overlay appears here.
           </div>
         ) : (
           <>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12 }}>
-              <span style={{ padding: '3px 9px', borderRadius: 999, background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.35)', color: '#a5b4fc' }}>
+              <span style={{ padding: '3px 9px', borderRadius: 999, background: "var(--accent-soft)", border: "1px solid var(--accent-soft)", color: "var(--accent)" }}>
                 {result.imported && result.imported.kind} · {result.specId}
               </span>
             </div>
 
             {result.workerSummary && (
-              <div style={{ padding: 12, background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: 8, fontSize: 13, lineHeight: 1.5 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: '#c4b5fd', marginBottom: 6 }}>🚀 Claude — what was built</div>
+              <div style={{ padding: 12, background: 'var(--violet-soft)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: 8, fontSize: 13, lineHeight: 1.5 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--violet)', marginBottom: 6 }}>🚀 Claude — what was built</div>
                 <div style={{ whiteSpace: 'pre-wrap' }}>{result.workerSummary}</div>
               </div>
             )}
 
             {unbound.length > 0 && (
-              <div style={{ padding: 10, borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', fontSize: 12 }}>
-                <strong style={{ color: '#fca5a5' }}>Unbound (not errors — confirm a binding):</strong>{' '}
+              <div style={{ padding: 10, borderRadius: 8, background: 'var(--danger-soft)', border: '1px solid rgba(239,68,68,0.3)', fontSize: 12 }}>
+                <strong style={{ color: 'var(--danger)' }}>Unbound (not errors — confirm a binding):</strong>{' '}
                 {unbound.join(', ')}
               </div>
             )}
 
-            <RegionList title="✅ Conforms" items={regions.conforms} color="#22c55e" />
-            <RegionList title="❌ Missing" items={regions.missing} color="#ef4444" />
-            <RegionList title="⚠ Extra (undocumented)" items={regions.extra} color="#f59e0b" />
+            <RegionList title="✅ Conforms" items={regions.conforms} color="var(--success)" />
+            <RegionList title="❌ Missing" items={regions.missing} color="var(--danger)" />
+            <RegionList title="⚠ Extra (undocumented)" items={regions.extra} color="var(--warning)" />
 
             {emitted.length > 0 && (
-              <div style={{ padding: 10, borderRadius: 8, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)', fontSize: 12 }}>
-                <strong style={{ color: '#86efac' }}>Created {emitted.length} task(s):</strong>
+              <div style={{ padding: 10, borderRadius: 8, background: 'var(--success-soft)', border: '1px solid rgba(34,197,94,0.3)', fontSize: 12 }}>
+                <strong style={{ color: 'var(--success)' }}>Created {emitted.length} task(s):</strong>
                 {emitted.map((t, i) => (
                   <div key={i} style={{ fontFamily: 'monospace', fontSize: 11, marginTop: 2 }}>{t.call || t.gap} <span style={{ opacity: 0.6 }}>#{t.taskId}</span></div>
                 ))}
@@ -593,7 +597,7 @@ export default function SpecTab({ socket, db, pendingSpecId, onPendingConsumed }
 
             {result.subgraph && result.subgraph.nodes.length > 0 && (
               <>
-                <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--muted, #94a3b8)' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: "var(--muted)" }}>
                   Spec subgraph · {result.subgraph.nodes.length} nodes
                 </div>
                 <SpecSubgraph nodes={result.subgraph.nodes} edges={result.subgraph.edges} />
@@ -630,19 +634,19 @@ export function DiagramsTab({ db, onOpen }) {
   }, [dbQuery]);
 
   return (
-    <div style={{ height: '100%', boxSizing: 'border-box', padding: 24, overflow: 'auto', background: 'var(--bg, #0b0d10)', color: 'var(--text, #e4e4e7)' }}>
+    <div style={{ height: '100%', boxSizing: 'border-box', padding: 24, overflow: 'auto', background: "var(--bg)", color: "var(--text)" }}>
       <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>📚 Saved diagrams</h2>
-          <span style={{ fontSize: 12, color: 'var(--muted, #94a3b8)' }}>{specs.length} total</span>
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>{specs.length} total</span>
         </div>
-        <div style={{ fontSize: 13, color: 'var(--muted, #94a3b8)' }}>
+        <div style={{ fontSize: 13, color: "var(--muted)" }}>
           Every diagram imported in the Spec tab. Click one to reopen it and its overlay in the graph — no re-run needed.
         </div>
-        {loading && <div style={{ color: 'var(--muted, #94a3b8)', fontSize: 13 }}>Loading…</div>}
-        {error && <div style={{ color: '#ef4444', fontSize: 13 }}>Couldn't load: {error}</div>}
+        {loading && <div style={{ color: "var(--muted)", fontSize: 13 }}>Loading…</div>}
+        {error && <div style={{ color: "var(--danger)", fontSize: 13 }}>Couldn't load: {error}</div>}
         {!loading && !error && specs.length === 0 && (
-          <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted, #94a3b8)', fontSize: 14, border: '1px dashed var(--border, #2a2f37)', borderRadius: 10, background: 'rgba(255,255,255,0.02)' }}>
+          <div style={{ padding: 32, textAlign: 'center', color: "var(--muted)", fontSize: 14, border: "1px dashed var(--border)", borderRadius: 10, background: 'rgba(255,255,255,0.02)' }}>
             No saved diagrams yet. Go to the <strong>📐 Spec</strong> tab and import a PlantUML / .wsd diagram — it'll show up here.
           </div>
         )}
@@ -650,11 +654,11 @@ export function DiagramsTab({ db, onOpen }) {
           {specs.map((s) => (
             <button key={s.specId} type="button" onClick={() => onOpen && onOpen(s.specId)}
               title="Open this diagram + overlay in the Spec view"
-              style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '12px 14px', border: '1px solid var(--border, #2a2f37)', borderRadius: 10, background: 'var(--surface, #14171c)', cursor: 'pointer', textAlign: 'left', color: 'var(--text, #e4e4e7)', fontFamily: 'inherit' }}>
-              <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, color: '#a5b4fc', background: 'rgba(99,102,241,0.15)', padding: '2px 8px', borderRadius: 5, textTransform: 'uppercase' }}>{s.kind || s.label}</span>
+              style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%',  border: "1px solid var(--border)",  "--button-bg": "var(--surface)", cursor: 'pointer', textAlign: 'left', "--button-text": "var(--text)",  }}>
+              <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, color: "var(--accent)", background: "var(--accent-soft)", padding: '2px 8px', borderRadius: 5, textTransform: 'uppercase' }}>{s.kind || s.label}</span>
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 14 }}>{s.title}</span>
-              <span style={{ flexShrink: 0, fontSize: 12, color: 'var(--muted, #94a3b8)' }}>{s.children} nodes</span>
-              <span style={{ flexShrink: 0, fontSize: 16, color: 'var(--muted, #94a3b8)' }}>›</span>
+              <span style={{ flexShrink: 0, fontSize: 12, color: "var(--muted)" }}>{s.children} nodes</span>
+              <span style={{ flexShrink: 0, fontSize: 16, color: "var(--muted)" }}>›</span>
             </button>
           ))}
         </div>
