@@ -29,6 +29,19 @@ switches. `tests/optimistic-updates.test.js` checks all completion orders and
 success/failure combinations for three overlapping updates, plus React StrictMode.
 The browser rollback smoke scripts exercise the built UI with intercepted writes.
 
+## Async relationship schema
+
+`tests/async-chains.test.js` runs the real Go and JavaScript grammars and async
+extractor against disposable Ladybug databases. Go goroutines must persist
+`SPAWNS` edges, not `AWAITS`; ordinary calls must not become spawns. JavaScript
+awaits and promise handlers keep their own relationship types. Repeated
+extraction must not duplicate edges.
+
+`tests/daemon-lifecycle.test.js` removes `SPAWNS` only from an isolated test
+database to reproduce an older schema, then verifies that reconciliation adds
+it idempotently without deleting authored Knowledge. The schema declaration is
+also covered by `tests/ladybug-schema.test.js`.
+
 ## Checks still needed for a release
 
 - Run the exact release commit on the full OS/Node matrix in

@@ -428,6 +428,31 @@ describe("daemon lifecycle endpoints", () => {
             assert.equal(JSON.parse(res.body).ok, true);
         });
 
+        it("adds SPAWNS to an older open database without losing authored nodes", async () => {
+            const run = async (query) => {
+                const res = await cypher(d.port, "target", query);
+                assert.equal(res.status, 200, JSON.stringify(res.body));
+                assert.ok(!res.body.error, JSON.stringify(res.body));
+                return res.body.records;
+            };
+            await run("CREATE (:CodeNode {uid:'schema-upgrade-note', label:'Knowledge', content:'keep me'})");
+            // Only this suite's disposable database is modified. Removing the
+            // new table reproduces the catalog from before the schema upgrade.
+            const tables = await run("CALL show_tables() RETURN name");
+            if (tables.some((table) => table.name === "SPAWNS")) await run("DROP TABLE SPAWNS");
+            assert.equal((await run("CALL show_tables() RETURN name")).some((table) => table.name === "SPAWNS"), false);
+
+            for (let attempt = 0; attempt < 2; attempt++) {
+                const res = await ask(d.port, "POST", "/schema/reconcile", 60000);
+                assert.equal(res.status, 200, res.body);
+                assert.equal(JSON.parse(res.body).ok, true);
+            }
+            await run("CREATE (:CodeNode {uid:'spawn-caller', label:'Function', name:'start'}), (:CodeNode {uid:'spawn-target', label:'Function', name:'worker'})");
+            await run("MATCH (a:CodeNode {uid:'spawn-caller'}), (b:CodeNode {uid:'spawn-target'}) MERGE (a)-[:SPAWNS]->(b)");
+            assert.deepEqual(await run("MATCH (a:CodeNode)-[:SPAWNS]->(b:CodeNode) RETURN a.name AS caller, b.name AS target"), [{ caller: "start", target: "worker" }]);
+            assert.deepEqual(await run("MATCH (n:CodeNode {uid:'schema-upgrade-note'}) RETURN n.content AS content"), [{ content: "keep me" }]);
+        });
+
         it("leaves the node table carrying every column the schema declares", async () => {
             // The point of the route: after it runs, nothing the builder writes
             // can hit "Cannot find property X". Compare the live catalog against

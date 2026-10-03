@@ -7942,6 +7942,7 @@ module.exports = {
     extractInstantiations,
     extractCalls,
     extractCallbacks,
+    extractAsyncChains,
     extractPythonAttributeTypes,
     simplePythonTypeName,
     // The attribute compartment of a class box is fed by this one — Python has
