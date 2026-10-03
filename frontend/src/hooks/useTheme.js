@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
+import { applyTheme } from '../theme/tokens';
 
 const STORAGE_KEY = 'codevis.theme';
 const EVENT_NAME = 'codevis-theme-change';
 
-function initialTheme() {
+export function initialTheme() {
     try {
         const stored = localStorage.getItem(STORAGE_KEY);
         if (stored === 'light' || stored === 'dark') return stored;
@@ -15,8 +16,7 @@ export default function useTheme() {
     const [theme, setLocalTheme] = useState(initialTheme);
 
     useEffect(() => {
-        document.documentElement.dataset.theme = theme;
-        document.documentElement.style.colorScheme = theme;
+        applyTheme(theme);
     }, [theme]);
 
     useEffect(() => {
@@ -28,6 +28,7 @@ export default function useTheme() {
     const setTheme = useCallback((next) => {
         const value = next === 'light' ? 'light' : 'dark';
         try { localStorage.setItem(STORAGE_KEY, value); } catch {}
+        applyTheme(value);
         window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: value }));
     }, []);
 

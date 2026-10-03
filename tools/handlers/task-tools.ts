@@ -689,7 +689,7 @@ const handlers: Record<string, ToolHandler> = {
                 // agents treat errors as "retry" and would loop forever on
                 // files that cannot be synchronized (docs, deleted files, ...).
                 const projectDir = projectRoot();
-                const affectedFiles = withJournalFiles(await getSyncFiles(session, { taskId: args.taskId }), projectDir, args.taskId);
+                const affectedFiles = withJournalFiles(await getSyncFiles(session, { taskId: args.taskId, projectRoot: projectDir }), projectDir, args.taskId);
                 const sync = await syncTaskFiles(affectedFiles, projectDir, (absolutePath, file, ext) =>
                     syncFileToGraphDetailed(absolutePath, file, ext, driver));
                 const attributedEdits = await applyTouchJournal(session, projectDir, args.taskId, true);
@@ -1105,7 +1105,7 @@ Object.assign(handlers, {
             const task = await session.run('MATCH (t:Task {taskId:$taskId}) RETURN t.taskId AS taskId', { taskId: args.taskId });
             if (!task.records.length) return { content: [{ type: 'text', text: JSON.stringify({ status: 'NOT_FOUND', taskId: args.taskId }) }], isError: true };
             const projectDir = projectRoot();
-            const affectedFiles = withJournalFiles(await getSyncFiles(session, { taskId: args.taskId }), projectDir, args.taskId);
+            const affectedFiles = withJournalFiles(await getSyncFiles(session, { taskId: args.taskId, projectRoot: projectDir }), projectDir, args.taskId);
             const sync = await syncTaskFiles(affectedFiles, projectDir, (absolutePath, file, ext) =>
                 commitSyncFileDetailed(absolutePath, file, ext, driver, args.taskId));
             // Kept for complete_task: replaying is idempotent (MERGE).

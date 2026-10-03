@@ -1,3 +1,4 @@
+import { controlStyle } from '../theme/tokens';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import BRIDGE_URL from '../bridgeUrl';
 import useRequestLifetime from '../hooks/useRequestLifetime';
@@ -27,30 +28,21 @@ const PANEL = {
     overflow: 'auto',
     overflowX: 'hidden',
     minWidth: 0,
-    background: 'var(--bg, #0b0d10)',
-    color: 'var(--text, #e4e4e7)',
+    background: "var(--bg)",
+    color: "var(--text)",
     display: 'flex',
     flexDirection: 'column',
     gap: 12,
 };
 
-const CONTROL = {
-    padding: '6px 10px',
-    fontSize: 12,
-    borderRadius: 8,
-    cursor: 'pointer',
-    border: '1px solid var(--border, #2a2f37)',
-    background: 'var(--surface, #14171c)',
-    color: 'var(--text, #e4e4e7)',
-    fontFamily: 'inherit',
-};
+const CONTROL = controlStyle;
 
 const SECTION = {
     flexShrink: 0,
-    border: '1px solid var(--border, #2a2f37)',
+    border: "1px solid var(--border)",
     borderRadius: 10,
     padding: 16,
-    background: 'var(--surface, #14171c)',
+    background: "var(--surface)",
     minWidth: 0,
 };
 
@@ -58,7 +50,7 @@ const SECTION_TITLE = {
     fontSize: 13,
     fontWeight: 600,
     marginBottom: 12,
-    color: 'var(--text, #e4e4e7)',
+    color: "var(--text)",
 };
 
 // Scans whose answer is a claim about COMPLETENESS: "nothing calls this", "this
@@ -169,8 +161,8 @@ function relativeTime(ms) {
 /** Render a single stat chip in the stats bar. */
 function Chip({ label, value }) {
     return (
-        <span style={{ fontSize: 12, color: 'var(--muted, #94a3b8)', whiteSpace: 'nowrap' }}>
-            <strong style={{ color: 'var(--text, #e4e4e7)' }}>{value}</strong> {label}
+        <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: 'nowrap' }}>
+            <strong style={{ color: "var(--text)" }}>{value}</strong> {label}
         </span>
     );
 }
@@ -267,11 +259,11 @@ function ResultTable({ rows, truncated, limit, error, loading, graphData, onShow
     const pan = useDragScroll();
     const [showIdentifiers, setShowIdentifiers] = useState(false);
     if (loading) {
-        return <div style={{ color: 'var(--muted, #94a3b8)', fontSize: 13 }}>Running…</div>;
+        return <div style={{ color: "var(--muted)", fontSize: 13 }}>Running…</div>;
     }
     if (error) {
         return (
-            <div style={{ color: '#ef4444', fontSize: 13, padding: '8px 0' }}>
+            <div style={{ color: "var(--danger)", fontSize: 13, padding: '8px 0' }}>
                 {error}
             </div>
         );
@@ -282,9 +274,9 @@ function ResultTable({ rows, truncated, limit, error, loading, graphData, onShow
             <div style={{
                 padding: '20px 0',
                 textAlign: 'center',
-                color: 'var(--muted, #94a3b8)',
+                color: "var(--muted)",
                 fontSize: 13,
-                border: '1px dashed var(--border, #2a2f37)',
+                border: "1px dashed var(--border)",
                 borderRadius: 8,
             }}>
                 No results — the graph has nothing matching this query.
@@ -323,13 +315,13 @@ function ResultTable({ rows, truncated, limit, error, loading, graphData, onShow
     return (
         <div>
             {truncated && (
-                <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 6 }}>
+                <div style={{ fontSize: 12, color: "var(--warning)", marginBottom: 6 }}>
                     The query returned more than {limit?.toLocaleString()} rows and was cut there —
                     add a LIMIT clause or narrow the WHERE.
                 </div>
             )}
             {tableRows.length < rows.length && (
-                <div style={{ fontSize: 12, color: 'var(--muted, #94a3b8)', marginBottom: 6 }}>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>
                     Table shows the first {tableRows.length} of {rows.length.toLocaleString()} rows.
                     The graph has all of them.
                 </div>
@@ -359,15 +351,15 @@ function ResultTable({ rows, truncated, limit, error, loading, graphData, onShow
                                 <th key={col} style={{
                                     textAlign: 'left',
                                     padding: '6px 10px',
-                                    borderBottom: '1px solid var(--border, #2a2f37)',
-                                    color: 'var(--muted, #94a3b8)',
+                                    borderBottom: "1px solid var(--border)",
+                                    color: "var(--muted)",
                                     fontWeight: 600,
                                     whiteSpace: 'nowrap',
                                 }}>
                                     {col}
                                 </th>
                             ))}
-                            <th style={{ padding: '6px 10px', borderBottom: '1px solid var(--border, #2a2f37)', whiteSpace: 'nowrap' }}>
+                            <th style={{ padding: '6px 10px', borderBottom: "1px solid var(--border)", whiteSpace: 'nowrap' }}>
                                 Actions
                             </th>
                         </tr>
@@ -382,12 +374,12 @@ function ResultTable({ rows, truncated, limit, error, loading, graphData, onShow
                                 {columns.map((col) => {
                                     const val = row[col];
                                     const display = val === null || val === undefined
-                                        ? <span style={{ color: 'var(--muted, #94a3b8)' }}>null</span>
+                                        ? <span style={{ color: "var(--muted)" }}>null</span>
                                         : describeValue(val);
                                     return (
                                         <td key={col} title={describeValue(val)} style={{
                                             padding: '5px 10px',
-                                            borderBottom: '1px solid var(--border, #2a2f37)',
+                                            borderBottom: "1px solid var(--border)",
                                             maxWidth: 220,
                                             overflow: 'hidden',
                                             textOverflow: 'ellipsis',
@@ -397,14 +389,14 @@ function ResultTable({ rows, truncated, limit, error, loading, graphData, onShow
                                         </td>
                                     );
                                 })}
-                                <td style={{ padding: '5px 10px', borderBottom: '1px solid var(--border, #2a2f37)', whiteSpace: 'nowrap' }}>
+                                <td style={{ padding: '5px 10px', borderBottom: "1px solid var(--border)", whiteSpace: 'nowrap' }}>
                                     {(node || rowKeys(row).uids.length === 1) ? (
                                         <span style={{ display: 'flex', gap: 6 }}>
                                             <button type="button" style={CONTROL} onClick={() => onInspectNode?.(node?.id ?? rowKeys(row).uids[0])}>Inspect</button>
                                             <button type="button" style={CONTROL} onClick={() => onShowNode?.(node?.id ?? rowKeys(row).uids[0], 1)}>Show in graph</button>
                                         </span>
                                     ) : (
-                                        <span title={hasIdentity ? 'The query hit is outside the graph subset currently loaded by the dashboard.' : 'Return elementId(node) AS uid (recommended) or node.ipv6 AS ipv6 in the query.'} style={{ color: 'var(--muted, #94a3b8)', fontSize: 11 }}>
+                                        <span title={hasIdentity ? 'The query hit is outside the graph subset currently loaded by the dashboard.' : 'Return elementId(node) AS uid (recommended) or node.ipv6 AS ipv6 in the query.'} style={{ color: "var(--muted)", fontSize: 11 }}>
                                             {hasIdentity ? 'Not in loaded graph' : 'No id / ipv6'}
                                         </span>
                                     )}
@@ -415,7 +407,7 @@ function ResultTable({ rows, truncated, limit, error, loading, graphData, onShow
                     </tbody>
                 </table>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--muted, #94a3b8)', marginTop: 6 }}>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
                 {rows.length} row{rows.length !== 1 ? 's' : ''}
             </div>
         </div>
@@ -597,7 +589,7 @@ export default function ExploreTab({ db, graphData, onShowNode, onResultGraph, o
         <div ref={panelRef} className="explore-panel" style={PANEL}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
                 <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Explore</h2>
-                <span style={{ fontSize: 12, color: 'var(--muted, #94a3b8)' }}>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>
                     {db || 'active db'}
                 </span>
             </div>
@@ -610,8 +602,8 @@ export default function ExploreTab({ db, graphData, onShowNode, onResultGraph, o
                     dereferenziert null — der Tab blieb dadurch komplett weiss. */}
                 {staleBannerVisible && (
                     <div style={{
-                        padding: '8px 10px', marginBottom: 10, border: '1px solid #f59e0b',
-                        borderRadius: 6, color: '#f59e0b', fontSize: 12,
+                        padding: '8px 10px', marginBottom: 10, border: "1px solid var(--warning)",
+                        borderRadius: 6, color: "var(--warning)", fontSize: 12,
                         display: 'flex', alignItems: 'flex-start', gap: 10,
                     }}>
                         <span style={{ flex: 1, minWidth: 0 }}>
@@ -622,17 +614,17 @@ export default function ExploreTab({ db, graphData, onShowNode, onResultGraph, o
                             type="button"
                             onClick={() => setDismissedStaleCount(stats.staleFileCount)}
                             title="Dismiss. Comes back when the number of stale files changes."
-                            style={{ ...CONTROL, padding: '0 7px', color: '#f59e0b', lineHeight: 1.6, flexShrink: 0 }}
+                            style={{ ...CONTROL,  "--button-text": "var(--warning)",  flexShrink: 0 }}
                         >
                             ✕
                         </button>
                     </div>
                 )}
                 {statsError && (
-                    <div style={{ color: '#ef4444', fontSize: 12 }}>Could not load stats: {statsError}</div>
+                    <div style={{ color: "var(--danger)", fontSize: 12 }}>Could not load stats: {statsError}</div>
                 )}
                 {!stats && !statsError && (
-                    <div style={{ color: 'var(--muted, #94a3b8)', fontSize: 12 }}>Loading…</div>
+                    <div style={{ color: "var(--muted)", fontSize: 12 }}>Loading…</div>
                 )}
                 <details><summary>Node counts & build details</summary>
                 {stats && (
@@ -675,8 +667,8 @@ export default function ExploreTab({ db, graphData, onShowNode, onResultGraph, o
                             key={query}
                             style={{
                                 ...CONTROL,
-                                background: activeQueryName === label ? 'var(--border, #2a2f37)' : 'var(--surface, #14171c)',
-                                fontWeight: activeQueryName === label ? 600 : 400,
+                                "--button-bg": activeQueryName === label ? 'var(--border, #2a2f37)' : 'var(--surface, #14171c)',
+
                             }}
                             onClick={() => handleScanClick(query, label)}
                             disabled={queryLoading}
@@ -724,7 +716,7 @@ export default function ExploreTab({ db, graphData, onShowNode, onResultGraph, o
                         >
                             Clear
                         </button>
-                        <span style={{ fontSize: 11, color: 'var(--muted, #94a3b8)' }}>
+                        <span style={{ fontSize: 11, color: "var(--muted)" }}>
                             Read-only — writes are blocked server-side
                         </span>
                     </div>
@@ -740,14 +732,14 @@ export default function ExploreTab({ db, graphData, onShowNode, onResultGraph, o
                         on the result it qualifies instead of between you and the
                         button that produces it. */}
                     {stale && CONFIDENCE_SENSITIVE.has(activeScanName) && queryResult && (
-                        <div style={{ fontSize: 11.5, color: '#f59e0b', marginBottom: 8, lineHeight: 1.5 }}>
+                        <div style={{ fontSize: 11.5, color: "var(--warning)", marginBottom: 8, lineHeight: 1.5 }}>
                             Provisional — the graph is {stats.staleFileCount} file{stats.staleFileCount === 1 ? '' : 's'} behind the code,
                             and this scan asks whether something is <em>absent</em>. A function whose only caller
                             lives in a stale file shows up here as dead. Rebuild before acting on a row.
                         </div>
                     )}
                     {graphResult && (
-                        <div style={{ fontSize: 12, color: graphResult.unavailable ? '#f59e0b' : '#16a34a', marginBottom: 8 }}>
+                        <div style={{ fontSize: 12, color: graphResult.unavailable ? "var(--warning)" : "var(--success)", marginBottom: 8 }}>
                             Graph: {graphResult.shown} / {graphResult.total} results shown; {graphResult.unavailable} not representable
                             {' — '}{graphResult.nodes} nodes, {graphResult.links} edges
                             {graphResult.expanded > 0 && ` (incl. ${graphResult.expanded} neighbours, ${graphResult.hops} hop${graphResult.hops === 1 ? '' : 's'})`}
@@ -756,7 +748,7 @@ export default function ExploreTab({ db, graphData, onShowNode, onResultGraph, o
                         </div>
                     )}
                     {graphError && (
-                        <div style={{ fontSize: 12, color: '#ef4444', marginBottom: 8 }}>
+                        <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 8 }}>
                             Query results loaded, but the graph could not be shown: {graphError}
                         </div>
                     )}
@@ -779,7 +771,7 @@ export default function ExploreTab({ db, graphData, onShowNode, onResultGraph, o
                         knobs that decide whether a query draws structure or a
                         field of dots. */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                        <label style={{ fontSize: 11.5, color: 'var(--muted, #94a3b8)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <label style={{ fontSize: 11.5, color: "var(--muted)", display: 'flex', alignItems: 'center', gap: 6 }}>
                             Show connected items outside the query:
                             <input
                                 type="number"
@@ -808,19 +800,14 @@ export default function ExploreTab({ db, graphData, onShowNode, onResultGraph, o
                         <button
                             type="button"
                             onClick={() => setQueryText((t) => withDirectives(t, { ...directives, raw: !directives.raw }))}
-                            style={{
-                                ...CONTROL,
-                                padding: '3px 9px',
-                                background: directives.raw ? '#0f766e' : CONTROL.background,
-                                color: directives.raw ? '#ffffff' : CONTROL.color,
-                                fontWeight: directives.raw ? 600 : 400,
-                            }}
+                            className="ui-button"
+                            aria-pressed={directives.raw}
                             title="Keep the containment edges the architecture level hides — the atomic view"
                         >
                             @raw — all edges
                         </button>
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--muted, #94a3b8)', lineHeight: 1.6 }}>
+                    <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.6 }}>
                         Both are plain Cypher comments (<code>// @raw @expand 1</code>) and can be typed
                         instead. The number is how far past the result the graph may reach: at{' '}
                         <strong>0</strong> every node drawn is a row in the table below, and the only

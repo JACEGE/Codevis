@@ -6,7 +6,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 test('full and incremental builds reject incomplete scans before graph queries or identity adoption', t => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codevis-build-scan-'));
+    const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'codevis-build-scan-')));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const dataDir = path.join(root, '.codevis');
     fs.mkdirSync(dataDir);

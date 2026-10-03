@@ -245,7 +245,7 @@ function SettingsPanel({ activeDb, connected, growthMode, growthSpeed, maxVisibl
                             </div>
                         )}
                         {switchError && (
-                            <div className="settings-source-meta" style={{ color: '#ef4444', marginTop: 6 }}>
+                            <div className="settings-source-meta" style={{ color: "var(--danger)", marginTop: 6 }}>
                                 {switchError}
                             </div>
                         )}
@@ -392,7 +392,6 @@ function SettingsPanel({ activeDb, connected, growthMode, growthSpeed, maxVisibl
                         />
                     </div>
 
-
                     {/* Visibility & Growth Mode */}
                     <div className="settings-section">
                         {/* The number belongs here, not only on the slider behind
@@ -444,10 +443,11 @@ function SettingsPanel({ activeDb, connected, growthMode, growthSpeed, maxVisibl
                                 onClick={applyBudgetDraft}
                                 disabled={!budgetDirty || pending}
                                 style={{
-                                    padding: '5px 10px', borderRadius: 6,
+
                                     border: '1px solid var(--border)',
-                                    background: budgetDirty ? '#6366f1' : 'var(--surface)',
-                                    color: budgetDirty ? '#fff' : 'var(--muted)',
+                                    "--button-bg": budgetDirty ? "var(--accent-strong)" : 'var(--surface)',
+                                    "--button-text": budgetDirty ? 'var(--on-accent)' : 'var(--muted)',
+                                    "--button-hover": budgetDirty ? 'var(--accent-hover)' : 'var(--surface-hover)',
                                     cursor: !budgetDirty || pending ? 'default' : 'pointer',
                                     opacity: pending ? 0.65 : 1,
                                 }}

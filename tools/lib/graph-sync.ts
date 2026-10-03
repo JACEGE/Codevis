@@ -341,10 +341,11 @@ export async function commitSyncWave(
     const t0 = Date.now();
     const session = driver.session();
     let touchedFiles: Array<{ file: string; taskId: string }> = [];
+    const projectDir = projectRoot();
 
     try {
         // Collect all files touched by tasks in this wave
-        touchedFiles = await getSyncFiles(session, { waveId });
+        touchedFiles = await getSyncFiles(session, { waveId, projectRoot: projectDir });
     } finally {
         await session.close();
     }
@@ -364,8 +365,6 @@ export async function commitSyncWave(
     );
 
     const { resolve: pathResolve, extname } = await import("path");
-    const projectDir = projectRoot();
-
     let totalCreated = 0;
     let totalRemoved = 0;
     const failedFiles: string[] = [];

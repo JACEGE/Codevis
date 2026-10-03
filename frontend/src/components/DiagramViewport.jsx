@@ -1,3 +1,4 @@
+import { controlStyle } from '../theme/tokens';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 /**
@@ -16,11 +17,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
  * less code than configuring a pan/zoom library around a foreign SVG.
  */
 
-const BUTTON = {
-    padding: '6px 10px', fontSize: 12, borderRadius: 8, cursor: 'pointer',
-    border: '1px solid var(--border, #2a2f37)', background: 'var(--surface, #14171c)',
-    color: 'var(--text, #e4e4e7)', fontFamily: 'inherit', minWidth: 34,
-};
+const BUTTON = { ...controlStyle, minWidth: 'var(--control-height)' };
 const FIT_PADDING = 16;
 
 /** Natural size of a Mermaid SVG, preferring the viewBox over attributes. */
@@ -249,8 +246,8 @@ export default function DiagramViewport({ svg, style, resetKey }) {
                 aria-label="Diagram zoom"
                 style={{
                     position: 'absolute', right: 8, bottom: 8, display: 'flex', gap: 4,
-                    padding: 4, borderRadius: 10, background: 'var(--bg, #0b0d10)',
-                    border: '1px solid var(--border, #2a2f37)', opacity: 0.95,
+                    padding: 4, borderRadius: 10, background: "var(--bg)",
+                    border: "1px solid var(--border)", opacity: 0.95,
                 }}
             >
                 <button type="button" style={BUTTON} title="Zoom out" onClick={() => zoomBy(1 / 1.25)}>−</button>

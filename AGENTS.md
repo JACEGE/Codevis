@@ -22,8 +22,12 @@ focused guides in `docs/`. Claude-specific deep troubleshooting notes remain in
 - `server/ladybug-daemon.cjs`: the single writer for the embedded Ladybug database.
 - `server/bridge.js`: REST/WebSocket bridge used by the dashboard.
 - `tools/mcp_server.ts` and `tools/handlers/`: MCP surface for agents.
-- `frontend/src/`: React/Three.js dashboard; the active theme is
-  `frontend/src/demo-theme.css`.
+- `frontend/src/`: React/Three.js dashboard. Semantic colours live in
+  `frontend/src/theme/tokens.js` (CSS, canvas, Mermaid and terminal), shared
+  control geometry/states in `frontend/src/theme/controls.css`, and layout in
+  `frontend/src/demo-theme.css`. Use `ui-button` variants or `buttonStyle()`;
+  do not redefine button radii, padding or raw UI colours in individual panels.
+  Data-category palettes remain separate from UI accents.
 - `frontend/src/hooks/`, `frontend/src/graph/`, `frontend/src/pathfinder/`: shared
   dashboard state and pure graph/pathfinder models. Keep `App.jsx` focused on
   orchestration and put canvas presentation helpers outside `GraphScene.jsx`.

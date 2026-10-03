@@ -115,7 +115,32 @@ async function getTouchedNodes(session, taskId) {
   }));
 }
 
-async function getSyncFiles(session, { taskId, waveId }) {
+// TaskScope stores case-folded lock keys on Windows, whereas File.path uses
+// the spelling on disk. Never publish the lock key as a second code file.
+// Read directory entries rather than realpath: configured source symlinks
+// must keep the same graph path used by the full builder.
+function syncFilePath(file, projectRoot, directories) {
+  if (process.platform !== 'win32' || !projectRoot) return file;
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const parts = file.replaceAll('\\', '/').split('/');
+  let directory = projectRoot;
+  return parts.map(part => {
+    let name = part;
+    if (part && part !== '.' && part !== '..') {
+      if (!directories.has(directory)) {
+        try { directories.set(directory, fs.readdirSync(directory)); }
+        catch { directories.set(directory, []); } // Missing files remain skipped by the caller.
+      }
+      const entries = directories.get(directory);
+      name = entries.includes(part) ? part : entries.find(entry => entry.toLowerCase() === part.toLowerCase()) || part;
+    }
+    directory = path.resolve(directory, name);
+    return name;
+  }).join('/');
+}
+
+async function getSyncFiles(session, { taskId, waveId, projectRoot }) {
   const result = await session.run(
     `MATCH (t:Task) WHERE ${taskId != null ? 't.taskId = $taskId' : "t.wave = $waveId AND t.status IN ['done', 'review']"}
      MATCH (t)-[:AFFECTS|:RESERVES|:TOUCHED]->(n)
@@ -123,7 +148,14 @@ async function getSyncFiles(session, { taskId, waveId }) {
      RETURN DISTINCT coalesce(n.file, n.path) AS file, t.taskId AS taskId`,
     taskId != null ? { taskId } : { waveId },
   );
-  return result.records.map(r => ({ file: r.get('file'), taskId: r.get('taskId') }));
+  const directories = new Map();
+  const files = new Map();
+  for (const record of result.records) {
+    const file = syncFilePath(record.get('file'), projectRoot, directories);
+    const owner = record.get('taskId');
+    files.set(JSON.stringify([file, owner]), { file, taskId: owner });
+  }
+  return [...files.values()];
 }
 
 module.exports = { getAgentTaskGroup, recordTouchedNodes, recordTouchedRanges, getTouchedNodes, getSyncFiles };

@@ -18,7 +18,7 @@ test('MCP persists Changes across clients and workers cannot mutate workflow', {
  const call=async(c,name,args)=>{const r=await c.callTool({name,arguments:args});assert.ok(!r.isError,r.content?.[0]?.text);return JSON.parse(r.content[0].text);};
  try{
   const lead=await connect('lead');
-  const identity=await call(lead,'get_workspace_identity',{});assert.equal(path.resolve(identity.projectRoot),path.resolve(temp));
+  const identity=await call(lead,'get_workspace_identity',{});assert.equal(identity.projectRoot,process.platform==='win32'?fs.realpathSync.native(temp):path.resolve(temp));
   const created=await call(lead,'flow_write',{operation:'create',title:'Refresh token rotation',description:'Reject previously used tokens after rotation.',slug:'rotation'});
   const submitted=await call(lead,'change_write',{operation:'submit',slug:'rotation',expectedRevision:created.state.revision,...requirements});
   const completed=await call(lead,'change_write',{operation:'complete',slug:'rotation',expectedRevision:submitted.state.revision});assert.equal(completed.state.currentPhase,'analysis');

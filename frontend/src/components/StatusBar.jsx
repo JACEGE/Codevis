@@ -6,16 +6,16 @@ import BRIDGE_URL from '../bridgeUrl';
 import { matchesWorkspace, workspaceRequestId } from '../kanban/realtimeModel';
 
 const STATUS_COLORS = {
-    backlog: '#6b7394',
-    todo: '#00dcff',
-    in_progress: '#ff8c42',
-    review: '#a855f7',
-    blocked: '#ff4444',
-    needs_info: '#ffcc00',
-    done: '#39ff85',
+    backlog: "var(--muted)",
+    todo: "var(--info)",
+    in_progress: "var(--warning)",
+    review: "var(--violet)",
+    blocked: "var(--danger)",
+    needs_info: "var(--warning)",
+    done: "var(--success)",
 };
 
-const AGENT_PALETTE = ['#00dcff', '#ff8c42', '#e855a0', '#55e8a0', '#a855f7', '#ffd700'];
+const AGENT_PALETTE = ["var(--info)", "var(--warning)", '#e855a0', '#55e8a0', "var(--violet)", "var(--warning)"];
 
 // Compact node count: 12000 -> "12k", 49537 -> "50k".
 const fmtK = (n) => (n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`);
@@ -113,7 +113,7 @@ function StatusBar({ force2d = false, capped = null, db: dbProp, socket, connect
             padding: '0 12px',
             fontSize: '11px',
             fontFamily: "'JetBrains Mono', 'Inter', monospace",
-            color: 'var(--muted, #888888)',
+            color: "var(--muted)",
             overflow: 'hidden',
         },
         section: {
@@ -122,7 +122,7 @@ function StatusBar({ force2d = false, capped = null, db: dbProp, socket, connect
             gap: '6px',
             paddingRight: '14px',
             marginRight: '14px',
-            borderRight: '1px solid var(--border, #e0e0e0)',
+            borderRight: "1px solid var(--border)",
             whiteSpace: 'nowrap',
         },
         sectionLast: {
@@ -139,13 +139,13 @@ function StatusBar({ force2d = false, capped = null, db: dbProp, socket, connect
             flexShrink: 0,
         }),
         label: {
-            color: 'var(--muted, #888888)',
+            color: "var(--muted)",
             fontSize: '10px',
             textTransform: 'uppercase',
             letterSpacing: '0.5px',
         },
         value: {
-            color: 'var(--text, #1a1a1a)',
+            color: "var(--text)",
             fontWeight: 600,
         },
         agentBadge: (color) => ({
@@ -159,14 +159,14 @@ function StatusBar({ force2d = false, capped = null, db: dbProp, socket, connect
         progressTrack: {
             width: '60px',
             height: '4px',
-            backgroundColor: 'var(--border, #e0e0e0)',
+            backgroundColor: "var(--border)",
             borderRadius: '2px',
             overflow: 'hidden',
         },
         progressFill: {
             height: '100%',
             width: `${progressPct}%`,
-            backgroundColor: progressPct === 100 ? '#39ff85' : '#ff8c42',
+            backgroundColor: progressPct === 100 ? "var(--success)" : "var(--warning)",
             borderRadius: '2px',
             transition: 'width 0.4s ease',
         },
@@ -176,7 +176,7 @@ function StatusBar({ force2d = false, capped = null, db: dbProp, socket, connect
         brand: {
             fontSize: '11px',
             fontWeight: 700,
-            color: 'var(--text, #1a1a1a)',
+            color: "var(--text)",
             letterSpacing: '0.5px',
         },
     };
@@ -190,8 +190,8 @@ function StatusBar({ force2d = false, capped = null, db: dbProp, socket, connect
 
             {/* Connection */}
             <div style={styles.section}>
-                <span style={styles.dot(connected == null ? '#f59e0b' : connected ? '#39ff85' : '#ff4444')} />
-                <span style={{ color: connected == null ? '#f59e0b' : connected ? '#39ff85' : '#ff4444' }}>
+                <span style={styles.dot(connected == null ? "var(--warning)" : connected ? "var(--success)" : "var(--danger)")} />
+                <span style={{ color: connected == null ? "var(--warning)" : connected ? "var(--success)" : "var(--danger)" }}>
                     {connected == null ? 'Connecting' : connected ? 'Bridge' : 'Offline'}
                 </span>
             </div>
@@ -218,7 +218,7 @@ function StatusBar({ force2d = false, capped = null, db: dbProp, socket, connect
                 <span style={styles.label}>Locks</span>
                 <span style={{
                     ...styles.value,
-                    color: lockCount > 0 ? '#ff8c42' : 'var(--muted, #888)',
+                    color: lockCount > 0 ? "var(--warning)" : 'var(--muted, #888)',
                 }}>
                     {lockCount}
                 </span>
@@ -233,7 +233,7 @@ function StatusBar({ force2d = false, capped = null, db: dbProp, socket, connect
                 </div>
                 <span style={{
                     ...styles.value,
-                    color: progressPct === 100 ? '#39ff85' : 'var(--text, #1a1a1a)',
+                    color: progressPct === 100 ? "var(--success)" : 'var(--text, #1a1a1a)',
                 }}>
                     {progressPct}%
                 </span>
@@ -250,7 +250,7 @@ function StatusBar({ force2d = false, capped = null, db: dbProp, socket, connect
                     {inProgress.slice(0, 2).map(t => (
                         <span key={t.taskId} title={t.title} style={{
                             fontSize: '10px',
-                            color: 'var(--muted, #888)',
+                            color: "var(--muted)",
                             maxWidth: '120px',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -288,7 +288,7 @@ function StatusBar({ force2d = false, capped = null, db: dbProp, socket, connect
                         capped && `Level 3 capped: ${capped.shown.toLocaleString()} of ${capped.total.toLocaleString()} nodes`,
                     ].filter(Boolean).join(' · ')}
                 >
-                    <span style={{ ...styles.value, color: '#f59e0b' }}>
+                    <span style={{ ...styles.value, color: "var(--warning)" }}>
                         {[
                             force2d && '2D',
                             capped && `${fmtK(capped.shown)}/${fmtK(capped.total)}`,

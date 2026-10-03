@@ -3,10 +3,14 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import StandaloneKanban from './components/StandaloneKanban';
 import './demo-theme.css';
+import './theme/controls.css';
+import { applyTheme } from './theme/tokens';
+import { initialTheme } from './hooks/useTheme';
 import setupErrorReporter from './utils/errorReporter';
 import BRIDGE_URL from './bridgeUrl';
 
 // Init global error tracking (tags the erroring node in the code graph)
+applyTheme(initialTheme());
 setupErrorReporter(BRIDGE_URL);
 
 // URL-based routing: ?view=kanban shows the Kanban board

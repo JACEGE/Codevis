@@ -1,3 +1,4 @@
+import { controlStyle } from '../theme/tokens';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import BRIDGE_URL from '../bridgeUrl';
 import loadMermaid, { isChunkLoadError, withMermaidTheme } from '../lib/loadMermaid';
@@ -21,13 +22,9 @@ import DiagramViewport from './DiagramViewport';
 
 const PANEL = {
     height: '100%', boxSizing: 'border-box', padding: 24, overflow: 'auto',
-    background: 'var(--bg, #0b0d10)', color: 'var(--text, #e4e4e7)',
+    background: "var(--bg)", color: "var(--text)",
 };
-const CONTROL = {
-    padding: '6px 10px', fontSize: 12, borderRadius: 8, cursor: 'pointer',
-    border: '1px solid var(--border, #2a2f37)', background: 'var(--surface, #14171c)',
-    color: 'var(--text, #e4e4e7)', fontFamily: 'inherit',
-};
+const CONTROL = controlStyle;
 
 function download(filename, text) {
     const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
@@ -41,8 +38,8 @@ function download(filename, text) {
 /** One stat chip in the header row. */
 function Stat({ label, value }) {
     return (
-        <span style={{ fontSize: 12, color: 'var(--muted, #94a3b8)' }}>
-            <strong style={{ color: 'var(--text, #e4e4e7)' }}>{value}</strong> {label}
+        <span style={{ fontSize: 12, color: "var(--muted)" }}>
+            <strong style={{ color: "var(--text)" }}>{value}</strong> {label}
         </span>
     );
 }
@@ -189,7 +186,7 @@ export default function ClassDiagramTab({ db }) {
                     </div>
                 </div>
 
-                <div style={{ fontSize: 13, color: 'var(--muted, #94a3b8)' }}>
+                <div style={{ fontSize: 13, color: "var(--muted)" }}>
                     Generated from the code graph — no diagram file involved. Library base classes are drawn as
                     <code style={{ margin: '0 4px' }}>&lt;&lt;external&gt;&gt;</code>. A solid arrow is an
                     association — a field whose declared type is another class. A dotted arrow is
@@ -242,15 +239,15 @@ export default function ClassDiagramTab({ db }) {
                 </form>
 
                 {(autoNotes.length > 0 || stats.usesOmitted > 0) && (
-                    <div style={{ fontSize: 12, color: 'var(--muted, #94a3b8)' }}>
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>
                         {autoNotes.length > 0 && <>Large diagram ({stats.classes} classes): {autoNotes.join(' · ')} — change it with the toggles above. </>}
                         {stats.usesOmitted > 0 && <>{stats.usesOmitted} weaker uses arrows omitted (only the {stats.uses} with the most calls are drawn).</>}
                     </div>
                 )}
-                {loading && <div style={{ color: 'var(--muted, #94a3b8)', fontSize: 13 }}>Loading…</div>}
-                {error && <div style={{ color: '#ef4444', fontSize: 13 }}>Couldn&rsquo;t load: {error}</div>}
+                {loading && <div style={{ color: "var(--muted)", fontSize: 13 }}>Loading…</div>}
+                {error && <div style={{ color: "var(--danger)", fontSize: 13 }}>Couldn&rsquo;t load: {error}</div>}
                 {empty && (
-                    <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted, #94a3b8)', fontSize: 14, border: '1px dashed var(--border, #2a2f37)', borderRadius: 10 }}>
+                    <div style={{ padding: 32, textAlign: 'center', color: "var(--muted)", fontSize: 14, border: "1px dashed var(--border)", borderRadius: 10 }}>
                         No classes in this graph. Either the code isn&rsquo;t class-based, the graph hasn&rsquo;t been built
                         yet (<code>codevis build</code>), or the path prefix excluded everything.
                     </div>
@@ -258,8 +255,8 @@ export default function ClassDiagramTab({ db }) {
                 {renderError && renderError.stale && (
                     <div style={{
                         display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
-                        fontSize: 13, color: 'var(--text, #e4e4e7)', padding: '10px 12px',
-                        border: '1px solid #38bdf8', borderRadius: 10,
+                        fontSize: 13, color: "var(--text)", padding: '10px 12px',
+                        border: "1px solid var(--info)", borderRadius: 10,
                         background: 'rgba(56,189,248,0.08)',
                     }}>
                         <span>
@@ -268,13 +265,13 @@ export default function ClassDiagramTab({ db }) {
                         </span>
                         <button
                             type="button"
-                            style={{ ...CONTROL, borderColor: '#38bdf8' }}
+                            style={{ ...CONTROL, borderColor: "var(--info)" }}
                             onClick={() => window.location.reload()}
                         >Reload page</button>
                     </div>
                 )}
                 {renderError && !renderError.stale && (
-                    <div style={{ color: '#f59e0b', fontSize: 13 }}>
+                    <div style={{ color: "var(--warning)", fontSize: 13 }}>
                         Diagram couldn&rsquo;t be rendered ({renderError.message}) — the source below is still valid.
                     </div>
                 )}
@@ -282,7 +279,7 @@ export default function ClassDiagramTab({ db }) {
                 <DiagramViewport
                     svg={svg}
                     resetKey={query}
-                    style={{ flex: 1, minHeight: 320, border: '1px solid var(--border, #2a2f37)', borderRadius: 10, background: 'var(--surface, #14171c)' }}
+                    style={{ flex: 1, minHeight: 320, border: "1px solid var(--border)", borderRadius: 10, background: "var(--surface)" }}
                 />
 
                 {showSource && data && (
@@ -296,12 +293,12 @@ export default function ClassDiagramTab({ db }) {
                                     type="button"
                                     role="tab"
                                     aria-selected={sourceFormat === fmt}
-                                    style={{ ...CONTROL, fontWeight: sourceFormat === fmt ? 600 : 400, borderColor: sourceFormat === fmt ? 'var(--accent, #38bdf8)' : undefined }}
+                                    style={{ ...CONTROL,  borderColor: sourceFormat === fmt ? 'var(--accent, #38bdf8)' : undefined }}
                                     onClick={() => setSourceFormat(fmt)}
                                 >{fmt === 'mermaid' ? 'Mermaid (rendered)' : 'PlantUML'}</button>
                             ))}
                         </div>
-                        <pre style={{ margin: 0, maxHeight: 300, overflow: 'auto', fontSize: 12, padding: 12, borderRadius: 10, border: '1px solid var(--border, #2a2f37)', background: 'var(--surface, #14171c)' }}>
+                        <pre style={{ margin: 0, maxHeight: 300, overflow: 'auto', fontSize: 12, padding: 12, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface)" }}>
                             {sourceFormat === 'mermaid' ? data.mermaid : data.plantuml}
                         </pre>
                     </div>

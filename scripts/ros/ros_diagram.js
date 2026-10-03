@@ -37,6 +37,9 @@ const STEREOTYPE = { topic: "topic", service: "service", action: "action" };
 // Arrow direction per edge type: does the node produce into the interface, or
 // consume from it? Producing points node -> interface, consuming points the
 // other way, so the diagram reads as data flow rather than as call direction.
+// Frame colour per interface kind; RosTab's legend and table use the same.
+const KIND_STROKE = require('../diagram/interface-colors.json');
+
 const EDGE_STYLE = {
     PUBLISHES_TOPIC: { dir: "out", label: "publishes" },
     SUBSCRIBES_TOPIC: { dir: "in", label: "subscribes" },
@@ -370,12 +373,23 @@ function renderMermaid(model, opts = {}) {
         out.push("  }");
     }
 
+    const styled = { topic: [], service: [], action: [] };
     for (const iface of model.interfaces) {
         const id = idFor("i:" + iface.name, iface.name);
         out.push(`  class ${id}["${sharedClassLabel(iface.name)}"] {`);
         out.push(`    <<${STEREOTYPE[iface.kind] || "topic"}>>`);
         if (iface.msgType) out.push(`    +${mermaidMember(shortMsgType(iface.msgType))}`);
         out.push("  }");
+        (styled[iface.kind] || styled.topic).push(id);
+    }
+    // Topics, services and actions look alike as class boxes; a coloured frame
+    // (the dashboard legend uses the same colours) tells them apart at a
+    // glance. Only the stroke is set, so the theme's fill and text still apply
+    // in light and dark mode.
+    // `style` per box: Mermaid 11's class diagram tags boxes with a cssClass
+    // but emits no CSS for a classDef, so those frames stayed grey.
+    for (const [kind, colour] of Object.entries(KIND_STROKE)) {
+        for (const id of styled[kind]) out.push(`  style ${id} stroke:${colour},stroke-width:3px`);
     }
 
     const emitted = new Set();

@@ -32,7 +32,7 @@ export default function EpicDetailDialog({
                         {epicDetailLoading ? (
                             <div style={styles.detailLoading}>Loading...</div>
                         ) : epicDetail.error ? (
-                            <div style={{ ...styles.detailLoading, color: '#dc2626' }}>{epicDetail.error}</div>
+                            <div style={{ ...styles.detailLoading, color: "var(--danger)" }}>{epicDetail.error}</div>
                         ) : (
                             <>
                                 <div style={{
@@ -61,7 +61,7 @@ export default function EpicDetailDialog({
                                         title="Derived from the tasks' statuses — not set by hand"
                                         style={{
                                             ...styles.detailStatus,
-                                            color: (COLUMNS.find(c => c.key === epicDetail.status) || {}).color || '#6b7394',
+                                            color: (COLUMNS.find(c => c.key === epicDetail.status) || {}).color || "var(--muted)",
                                         }}
                                     >{epicDetail.status}</span>
                                     {epicDetail.priority && PRIORITY_BADGE[epicDetail.priority] && (
@@ -110,7 +110,7 @@ export default function EpicDetailDialog({
                                             style={styles.editTextarea}
                                         />
                                         {epicSaveError && (
-                                            <div style={{ color: '#dc2626', fontSize: 12, marginTop: 6 }}>{epicSaveError}</div>
+                                            <div style={{ color: "var(--danger)", fontSize: 12, marginTop: 6 }}>{epicSaveError}</div>
                                         )}
                                         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                                             <button onClick={saveEpicEdit} disabled={epicSaving} style={styles.editSaveBtn}>
@@ -140,7 +140,7 @@ export default function EpicDetailDialog({
                                         <div style={styles.detailSectionLabel}>Work Instructions</div>
                                         <div style={{
                                             ...styles.detailDesc,
-                                            borderLeftColor: '#ff8c42',
+                                            borderLeftColor: "var(--warning)",
                                             backgroundColor: 'rgba(255,140,66,0.04)',
                                         }}>
                                             {epicDetail.workInstructions.split('\n').map((line, i) => (
@@ -166,29 +166,29 @@ export default function EpicDetailDialog({
                                             style={{
                                                 display: 'flex', alignItems: 'center', gap: 8,
                                                 padding: '5px 8px', marginTop: 3, borderRadius: 5,
-                                                border: '1px solid #eee', background: '#fafafa',
+                                                border: '1px solid var(--border)', background: 'var(--surface-raised)',
                                                 cursor: 'pointer',
                                             }}
                                         >
                                             <span style={{
-                                                fontSize: 10, fontWeight: 700, color: '#888',
+                                                fontSize: 10, fontWeight: 700, color: 'var(--muted)',
                                                 width: 16, textAlign: 'right', flexShrink: 0,
                                             }}>{i + 1}</span>
                                             <span style={{
-                                                flex: 1, minWidth: 0, fontSize: 12, color: '#1a1a1a',
+                                                flex: 1, minWidth: 0, fontSize: 12, color: "var(--text)",
                                                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                                             }}>{t.title}</span>
                                             <span style={{
                                                 flexShrink: 0, fontSize: 9, fontWeight: 700,
                                                 textTransform: 'uppercase', letterSpacing: '0.04em',
                                                 padding: '1px 6px', borderRadius: 3,
-                                                color: (COLUMNS.find(c => c.key === t.status) || {}).color || '#6b7394',
-                                                background: ((COLUMNS.find(c => c.key === t.status) || {}).color || '#6b7394') + '1a',
+                                                color: (COLUMNS.find(c => c.key === t.status) || {}).color || "var(--muted)",
+                                                background: ((COLUMNS.find(c => c.key === t.status) || {}).color || "var(--muted)") + '1a',
                                             }}>{t.status}</span>
                                         </div>
                                     ))}
                                     {(epicDetail.tasks || []).length === 0 && (
-                                        <div style={{ fontSize: 12, color: '#888', fontStyle: 'italic', padding: '4px 0' }}>
+                                        <div style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic', padding: '4px 0' }}>
                                             No tasks yet — drag a card onto the group on the board.
                                         </div>
                                     )}

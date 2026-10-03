@@ -6,6 +6,8 @@ import { colorForNode } from '../nodePalette';
 import useSessionDraft from '../hooks/useSessionDraft';
 import useRequestLifetime from '../hooks/useRequestLifetime';
 import { matchesWorkspace } from '../kanban/realtimeModel';
+import useTheme from '../hooks/useTheme';
+import { themeTokens } from '../theme/tokens';
 
 // Die Kategorie-Regel für Knowledge-Knoten stand nur hier und fehlte in
 // colorForNode — derselbe Knoten war in diesem Panel eingefärbt und im Graphen
@@ -19,6 +21,8 @@ const pickNodeColor = colorForNode;
  * renders in the detail card below the canvas.
  */
 function BrainSubgraph({ nodes, edges, selectedId, onSelect }) {
+  const [theme] = useTheme();
+  const colors = themeTokens(theme);
   const wrapRef = useRef(null);
   const [size, setSize] = useState({ w: 400, h: 320 });
 
@@ -49,7 +53,7 @@ function BrainSubgraph({ nodes, edges, selectedId, onSelect }) {
       ctx.shadowBlur = 12;
     }
     ctx.fillStyle = color;
-    ctx.strokeStyle = isSel ? '#ffffff' : 'rgba(255,255,255,0.25)';
+    ctx.strokeStyle = isSel ? colors.accent : colors['graph-outline'];
     ctx.lineWidth = isSel ? 1.5 : 0.5;
     ctx.beginPath();
     if (isTask) {
@@ -72,13 +76,13 @@ function BrainSubgraph({ nodes, edges, selectedId, onSelect }) {
     ctx.font = `500 ${fontSize}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = isSel ? '#ffffff' : 'rgba(228,228,231,0.85)';
+    ctx.fillStyle = colors.text;
     ctx.fillText(short, node.x, node.y + r + 2 / scale);
     ctx.restore();
-  }, [selectedId]);
+  }, [selectedId, colors]);
 
   return (
-    <div ref={wrapRef} style={{ flex: '1 1 auto', minHeight: 240, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border, #2a2f37)', background: '#0b0e1a' }}>
+    <div ref={wrapRef} style={{ flex: '1 1 auto', minHeight: 240, borderRadius: 'var(--radius-panel)', overflow: 'hidden', border: "1px solid var(--border)", background: 'var(--graph-bg)' }}>
       <ForceGraph2D
         width={size.w}
         height={size.h}
@@ -90,14 +94,14 @@ function BrainSubgraph({ nodes, edges, selectedId, onSelect }) {
           ctx.arc(node.x, node.y, 10, 0, 2 * Math.PI);
           ctx.fill();
         }}
-        linkColor={() => 'rgba(148,163,184,0.45)'}
+        linkColor={() => colors['graph-outline']}
         linkWidth={1.2}
         linkDirectionalArrowLength={4}
         linkDirectionalArrowRelPos={1}
         onNodeClick={(node) => onSelect && onSelect(node.id)}
         cooldownTicks={120}
         d3VelocityDecay={0.35}
-        backgroundColor="#0b0e1a"
+        backgroundColor={colors['graph-bg']}
       />
     </div>
   );
@@ -105,13 +109,13 @@ function BrainSubgraph({ nodes, edges, selectedId, onSelect }) {
 
 function StatusPill({ status }) {
   const map = {
-    idle: { label: 'Ready', color: '#94a3b8' },
-    saving: { label: 'Saving...', color: '#0ea5e9' },
-    saved: { label: 'Saved', color: '#22c55e' },
-    sending: { label: 'Sending to Claude...', color: '#0ea5e9' },
-    waiting: { label: 'Claude is thinking...', color: '#a855f7' },
-    done: { label: 'Done', color: '#22c55e' },
-    error: { label: 'Error', color: '#ef4444' },
+    idle: { label: 'Ready', color: "var(--muted)" },
+    saving: { label: 'Saving...', color: "var(--info)" },
+    saved: { label: 'Saved', color: "var(--success)" },
+    sending: { label: 'Sending to Claude...', color: "var(--info)" },
+    waiting: { label: 'Claude is thinking...', color: "var(--violet)" },
+    done: { label: 'Done', color: "var(--success)" },
+    error: { label: 'Error', color: "var(--danger)" },
   };
   const cfg = map[status] || map.idle;
   return (
@@ -123,7 +127,7 @@ function StatusPill({ status }) {
         padding: '6px 10px',
         borderRadius: 999,
         background: 'rgba(255,255,255,0.04)',
-        border: `1px solid ${cfg.color}55`,
+        border: `1px solid color-mix(in srgb, ${cfg.color} 33%, transparent)`,
         color: cfg.color,
         fontFamily: 'var(--font-mono, monospace)',
         fontSize: 12,
@@ -386,8 +390,8 @@ export default function BrainTab({ socket, db = 'project_db' }) {
         padding: 16,
         height: '100%',
         boxSizing: 'border-box',
-        background: 'var(--bg, #0b0d10)',
-        color: 'var(--text, #e4e4e7)',
+        background: "var(--bg)",
+        color: "var(--text)",
         overflow: 'hidden',
       }}
     >
@@ -398,8 +402,8 @@ export default function BrainTab({ socket, db = 'project_db' }) {
           flexDirection: 'column',
           gap: 12,
           padding: 16,
-          background: 'var(--surface, #14171c)',
-          border: '1px solid var(--border, #2a2f37)',
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
           borderRadius: 12,
           minHeight: 0,
           overflow: 'auto',
@@ -424,7 +428,7 @@ export default function BrainTab({ socket, db = 'project_db' }) {
             <div
               style={{
                 fontSize: 12,
-                color: '#f59e0b',
+                color: "var(--warning)",
                 background: 'rgba(245, 158, 11, 0.08)',
                 border: '1px solid rgba(245, 158, 11, 0.3)',
                 borderRadius: 8,
@@ -444,8 +448,6 @@ export default function BrainTab({ socket, db = 'project_db' }) {
             </button>
           )}
         </div>
-
-
 
         {/* Textarea */}
         <textarea
@@ -467,9 +469,9 @@ export default function BrainTab({ socket, db = 'project_db' }) {
             fontSize: 14,
             lineHeight: 1.5,
             fontFamily: 'inherit',
-            background: 'var(--bg, #0b0d10)',
-            color: 'var(--text, #e4e4e7)',
-            border: '1px solid var(--border, #2a2f37)',
+            background: "var(--bg)",
+            color: "var(--text)",
+            border: "1px solid var(--border)",
             borderRadius: 8,
             boxSizing: 'border-box',
           }}
@@ -506,20 +508,20 @@ export default function BrainTab({ socket, db = 'project_db' }) {
           {/* A successful Save left only a bare session id behind, which reads
               as metadata rather than as confirmation that anything happened. */}
           {status === 'saved' && (
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#16a34a' }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--success)" }}>
               ✓ Saved
             </span>
           )}
           {savedSessionId && (
-            <span style={{ fontSize: 11, color: 'var(--muted, #94a3b8)', fontFamily: 'monospace' }}>
+            <span style={{ fontSize: 11, color: "var(--muted)", fontFamily: 'monospace' }}>
               📁 {savedSessionId}
             </span>
           )}
           {errorMsg && (
-            <span style={{ fontSize: 12, color: '#ef4444' }}>{errorMsg}</span>
+            <span style={{ fontSize: 12, color: "var(--danger)" }}>{errorMsg}</span>
           )}
         </div>
-        <p style={{ margin: '10px 0 0', fontSize: 12, lineHeight: 1.5, color: 'var(--muted, #94a3b8)' }}>
+        <p style={{ margin: '10px 0 0', fontSize: 12, lineHeight: 1.5, color: "var(--muted)" }}>
           Save note stores your text. Generate linked items uses Claude Code to create knowledge and tasks.
           Drafts are kept in this browser tab when you switch views.
         </p>
@@ -532,8 +534,8 @@ export default function BrainTab({ socket, db = 'project_db' }) {
           flexDirection: 'column',
           gap: 12,
           padding: 16,
-          background: 'var(--surface, #14171c)',
-          border: '1px solid var(--border, #2a2f37)',
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
           borderRadius: 12,
           minHeight: 0,
           overflow: 'auto',
@@ -550,9 +552,9 @@ export default function BrainTab({ socket, db = 'project_db' }) {
               justifyContent: 'center',
               textAlign: 'center',
               padding: 32,
-              color: 'var(--muted, #94a3b8)',
+              color: "var(--muted)",
               fontSize: 14,
-              border: '1px dashed var(--border, #2a2f37)',
+              border: "1px dashed var(--border)",
               borderRadius: 8,
               background: 'rgba(255,255,255,0.02)',
             }}
@@ -572,8 +574,8 @@ export default function BrainTab({ socket, db = 'project_db' }) {
               <div
                 style={{
                   padding: 12,
-                  background: 'rgba(99, 102, 241, 0.08)',
-                  border: '1px solid rgba(99, 102, 241, 0.3)',
+                  background: "var(--accent-soft)",
+                  border: "1px solid var(--accent-soft)",
                   borderRadius: 8,
                   fontSize: 13,
                   lineHeight: 1.5,
@@ -585,7 +587,7 @@ export default function BrainTab({ socket, db = 'project_db' }) {
                     fontWeight: 600,
                     textTransform: 'uppercase',
                     letterSpacing: 0.5,
-                    color: '#a5b4fc',
+                    color: "var(--accent)",
                     marginBottom: 6,
                   }}
                 >
@@ -598,7 +600,7 @@ export default function BrainTab({ socket, db = 'project_db' }) {
             {/* Generated subgraph as a clickable mini force-graph */}
             {(brainResult.nodes || []).length > 0 ? (
               <>
-                <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--muted, #94a3b8)' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: "var(--muted)" }}>
                   {brainResult.nodes.length} nodes · {(brainResult.edges || []).length} edges — click a node for details
                 </div>
                 <BrainSubgraph
@@ -611,7 +613,7 @@ export default function BrainTab({ socket, db = 'project_db' }) {
                   const sel = (brainResult.nodes || []).find((n) => n.id === selectedNodeId);
                   if (!sel) {
                     return (
-                      <div style={{ fontSize: 12, color: 'var(--muted, #94a3b8)', fontStyle: 'italic', padding: '4px 2px' }}>
+                      <div style={{ fontSize: 12, color: "var(--muted)", fontStyle: 'italic', padding: '4px 2px' }}>
                         Click a node in the graph to see its full text.
                       </div>
                     );
@@ -621,24 +623,24 @@ export default function BrainTab({ socket, db = 'project_db' }) {
                   return (
                     <div style={{
                       padding: 12, borderRadius: 8, fontSize: 13, lineHeight: 1.55,
-                      background: `${color}11`, border: `1px solid ${color}44`,
+                      background: `color-mix(in srgb, ${color} 7%, transparent)`, border: `1px solid color-mix(in srgb, ${color} 27%, transparent)`,
                       maxHeight: 220, overflow: 'auto', flexShrink: 0,
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
                         <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, boxShadow: `0 0 6px ${color}` }} />
                         <strong style={{ fontSize: 14 }}>{sel.name || sel.taskId}</strong>
                         {(sel.labels || []).map((l) => (
-                          <span key={l} style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', padding: '1px 7px', borderRadius: 999, background: `${color}22`, color, border: `1px solid ${color}55` }}>{l}</span>
+                          <span key={l} style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', padding: '1px 7px', borderRadius: 999, background: `color-mix(in srgb, ${color} 13%, transparent)`, color, border: `1px solid color-mix(in srgb, ${color} 33%, transparent)` }}>{l}</span>
                         ))}
-                        {sel.priority && <span style={{ fontSize: 10, color: '#f59e0b' }}>{sel.priority}</span>}
-                        {sel.status && <span style={{ fontSize: 10, color: '#94a3b8' }}>{sel.status}</span>}
-                        {sel.taskId && <span style={{ fontSize: 10, color: 'var(--muted, #94a3b8)', fontFamily: 'monospace' }}>#{sel.taskId}</span>}
+                        {sel.priority && <span style={{ fontSize: 10, color: "var(--warning)" }}>{sel.priority}</span>}
+                        {sel.status && <span style={{ fontSize: 10, color: "var(--muted)" }}>{sel.status}</span>}
+                        {sel.taskId && <span style={{ fontSize: 10, color: "var(--muted)", fontFamily: 'monospace' }}>#{sel.taskId}</span>}
                       </div>
                       {bodyText
                         ? <div style={{ whiteSpace: 'pre-wrap' }}>{bodyText}</div>
-                        : <div style={{ fontStyle: 'italic', color: 'var(--muted, #94a3b8)' }}>No text stored on this node.</div>}
+                        : <div style={{ fontStyle: 'italic', color: "var(--muted)" }}>No text stored on this node.</div>}
                       {sel.workInstructions && (
-                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${color}33` }}>
+                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid color-mix(in srgb, ${color} 20%, transparent)` }}>
                           <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', color, marginBottom: 4 }}>Work instructions</div>
                           <div style={{ whiteSpace: 'pre-wrap', fontSize: 12 }}>{sel.workInstructions}</div>
                         </div>
@@ -648,7 +650,7 @@ export default function BrainTab({ socket, db = 'project_db' }) {
                 })()}
               </>
             ) : (
-              <div style={{ fontSize: 12, color: 'var(--muted, #94a3b8)', fontStyle: 'italic' }}>
+              <div style={{ fontSize: 12, color: "var(--muted)", fontStyle: 'italic' }}>
                 No nodes created.
               </div>
             )}

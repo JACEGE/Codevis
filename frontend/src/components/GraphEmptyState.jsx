@@ -5,13 +5,13 @@ export default function GraphEmptyState({ bridgeUrl, connected, loadedEmpty, fil
         <div role="status" style={{
             position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', gap: 10, textAlign: 'center',
-            padding: 24, background: 'var(--surface, #ffffff)', color: 'var(--muted, #888)',
+            padding: 24, background: "var(--surface)", color: "var(--muted)",
             zIndex: 50, pointerEvents: filtered ? 'auto' : 'none',
         }}>
             <div aria-hidden="true" style={{ fontSize: 40, opacity: 0.4 }}>
                 {connected === false ? '\u{1F50C}' : complete ? '\u25CB' : '\u23F3'}
             </div>
-            <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--text, #1a1a1a)' }}>
+            <div style={{ fontWeight: 600, fontSize: 15, color: "var(--text)" }}>
                 {connected === false ? 'No data / connection error'
                     : filtered ? 'All graph nodes are filtered out'
                     : complete ? 'No graph nodes to display'
@@ -26,9 +26,9 @@ export default function GraphEmptyState({ bridgeUrl, connected, loadedEmpty, fil
             </div>
             {filtered && (
                 <button type="button" onClick={onResetFilters} style={{
-                    padding: '7px 12px', border: '1px solid var(--border)', borderRadius: 6,
-                    background: 'var(--surface-raised, var(--surface))', color: 'var(--text)',
-                    cursor: 'pointer', font: 'inherit', fontWeight: 600,
+                     border: '1px solid var(--border)',
+                    "--button-bg": 'var(--surface-raised, var(--surface))', "--button-text": 'var(--text)',
+                    cursor: 'pointer', font: 'inherit',
                 }}>Show all node types</button>
             )}
         </div>

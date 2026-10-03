@@ -164,9 +164,9 @@ export default function GraphFilter({
         ref={triggerRef} type="button" aria-expanded={open} aria-controls="graph-filter-options"
         onClick={() => setOpen(!open)}
         style={{
-          background: 'var(--surface, #fff)', border: '1px solid var(--border, #e0e0e0)',
-          borderRadius: 6, padding: '6px 12px', cursor: 'pointer',
-          fontSize: 12, color: 'var(--text, #1a1a1a)', fontWeight: 600,
+          "--button-bg": "var(--surface)", border: "1px solid var(--border)",
+            cursor: 'pointer',
+           "--button-text": "var(--text)",
         }}
       >
         Filter {pending ? '…' : ''} {open ? '▲' : '▼'}
@@ -174,20 +174,20 @@ export default function GraphFilter({
       {open && (
         <div id="graph-filter-options" className={embedded ? 'graph-filter-options' : undefined} style={{
           marginTop: 4, background: 'color-mix(in srgb, var(--surface) 96%, transparent)', color: 'var(--text)',
-          border: '1px solid var(--border, #e0e0e0)', borderRadius: 8,
+          border: "1px solid var(--border)", borderRadius: 8,
           padding: 10, fontSize: 12, minWidth: 250,
           maxHeight: '70vh', overflowY: 'auto',
         }}>
           <div style={{
             paddingBottom: 8, marginBottom: 8,
-            borderBottom: '1px solid var(--border, #e0e0e0)',
+            borderBottom: "1px solid var(--border)",
           }}>
             <div style={{
               display: 'flex', justifyContent: 'space-between',
               fontWeight: 600, marginBottom: 4,
             }}>
               <span>Node Budget</span>
-              <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--text-muted, #888)' }}>
+              <span style={{ fontVariantNumeric: 'tabular-nums', color: "var(--text-muted)" }}>
                 {allLoaded ? `all ${total}` : `${current} / ${total}`}
               </span>
             </div>
@@ -209,15 +209,15 @@ export default function GraphFilter({
             <button type="button" aria-label="Load all nodes"
               title="Remove the node budget, including for future graph growth"
               disabled={unlimited} onClick={() => onBudgetChange?.(0)}
-              style={{ background: 'var(--surface)', color: 'var(--text)',
-                border: '1px solid var(--border)', borderRadius: 4, padding: '3px 8px',
+              style={{ "--button-bg": 'var(--surface)', "--button-text": 'var(--text)',
+                border: '1px solid var(--border)',
                 cursor: unlimited ? 'default' : 'pointer' }}>
               All
             </button>
             {/* Says what the number means, and what it is a fraction OF. The
                 slider used to report "500 / 500" because it measured itself
                 against the nodes it had already limited. */}
-            <div style={{ fontSize: 10.5, color: 'var(--text-muted, #888)', marginTop: 3, lineHeight: 1.4 }}>
+            <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 3, lineHeight: 1.4 }}>
               Loadable at this level: {total}
               {dbTotal ? ` · in the database: ${dbTotal}` : ''}
               <br />
@@ -232,7 +232,7 @@ export default function GraphFilter({
           <label style={{
             display: 'flex', alignItems: 'center', gap: 6,
             marginBottom: 8, paddingBottom: 8, cursor: isolatedCount ? 'pointer' : 'default',
-            borderBottom: '1px solid var(--border, #e0e0e0)',
+            borderBottom: "1px solid var(--border)",
             opacity: isolatedCount ? 1 : 0.45,
           }}>
             <input
@@ -243,11 +243,11 @@ export default function GraphFilter({
             />
             <span style={{
               width: 8, height: 8, borderRadius: '50%',
-              border: '1.5px solid #94a3b8', display: 'inline-block',
+              border: "1.5px solid var(--muted)", display: 'inline-block',
             }} />
             <span style={{ flex: 1 }}>No connections</span>
             <span style={{
-              fontSize: 10, color: 'var(--text-muted, #888)',
+              fontSize: 10, color: "var(--text-muted)",
               fontVariantNumeric: 'tabular-nums',
             }}>{isolatedCount}</span>
           </label>
@@ -255,7 +255,7 @@ export default function GraphFilter({
           <label style={{
             display: 'flex', alignItems: 'center', gap: 6,
             marginBottom: 8, paddingBottom: 8, cursor: 'pointer',
-            borderBottom: '1px solid var(--border, #e0e0e0)',
+            borderBottom: "1px solid var(--border)",
             fontWeight: 600,
           }}>
             <input
@@ -290,7 +290,7 @@ export default function GraphFilter({
                 }} />
                 <span style={{ flex: 1 }}>{t.label}</span>
                 <span style={{
-                  fontSize: 10, color: 'var(--text-muted, #888)',
+                  fontSize: 10, color: "var(--text-muted)",
                   fontVariantNumeric: 'tabular-nums',
                 }}>{total != null ? total : ''}</span>
               </label>
@@ -300,9 +300,9 @@ export default function GraphFilter({
               dasselbe Bild. Diese Zeile trennt die beiden. */}
           {emptyTypes > 0 && (
             <div style={{
-              fontSize: 10, color: 'var(--text-muted, #888)',
+              fontSize: 10, color: "var(--text-muted)",
               marginTop: 6, paddingTop: 6,
-              borderTop: '1px solid var(--border, #e0e0e0)',
+              borderTop: "1px solid var(--border)",
             }}>
               This level knows {emptyTypes} more types — this database has no
               nodes of any of them.

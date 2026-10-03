@@ -85,7 +85,7 @@ describe("withMermaidTheme", () => {
         const withMermaidTheme = await loadTabSource();
         const src = withMermaidTheme(renderMermaid(MODEL), "default");
         assert.ok(src.startsWith("---\n"), `Frontmatter nicht mehr vorne:\n${src.slice(0, 80)}`);
-        assert.ok(src.includes("%%{init: {'theme':'default'}}%%"), "Theme-Direktive fehlt");
+        assert.ok(src.includes('%%{init: {"theme":"base","themeVariables":'), "Theme-Direktive fehlt");
         // Und sie muss VOR dem Diagrammschlüsselwort stehen, nicht dahinter.
         assert.ok(
             src.indexOf("%%{init") < src.indexOf("classDiagram"),
@@ -95,10 +95,11 @@ describe("withMermaidTheme", () => {
 
     it("stellt die Direktive voran, wenn es keinen Frontmatter gibt", async () => {
         const withMermaidTheme = await loadTabSource();
-        assert.equal(
-            withMermaidTheme("classDiagram\n  class A", "default"),
-            "%%{init: {'theme':'default'}}%%\nclassDiagram\n  class A"
-        );
+        const src = withMermaidTheme("classDiagram\n  class A", "default");
+        assert.match(src, /^%%\{init: /);
+        assert.ok(src.endsWith('}%%\nclassDiagram\n  class A'));
+        const config = JSON.parse(src.slice('%%{init: '.length, src.indexOf('}%%')));
+        assert.equal(config.themeVariables.primaryTextColor, '#25272c');
     });
 });
 

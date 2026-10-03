@@ -38,7 +38,10 @@ const CONFIG_NAMES = ['codevis.config.cjs', 'codevis.config.js'];
 /**
  * Canonical spelling of an absolute path.
  *
- * Windows only: the drive letter's case depends on how the process was launched
+ * Windows only: resolve filesystem aliases (including 8.3 short paths) before
+ * deriving identities and ports. New data directories may not exist yet, so
+ * resolve their nearest existing ancestor and retain the missing suffix.
+ * The drive letter's case also depends on how the process was launched
  * — `C:\...` from a shell, `c:\...` from the CODEVIS_PROJECT_DIR that init wrote
  * into .mcp.json — and `path.resolve` preserves whatever it was given. Since the
  * data dir derived from this is used as the daemon's IDENTITY (a driver compares
@@ -49,6 +52,22 @@ const CONFIG_NAMES = ['codevis.config.cjs', 'codevis.config.js'];
 function canonicalize(p) {
     const resolved = path.resolve(p);
     if (process.platform !== 'win32') return resolved;
+    let ancestor = resolved;
+    const suffix = [];
+    for (;;) {
+        try {
+            return path.join(fs.realpathSync.native(ancestor), ...suffix)
+                .replace(/^([a-z]):/, (_, d) => `${d.toUpperCase()}:`);
+        } catch (error) {
+            // Do not turn an inaccessible path into a different identity by
+            // looking past it. The caller will report the actual access error.
+            if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') break;
+            const parent = path.dirname(ancestor);
+            if (parent === ancestor) break;
+            suffix.unshift(path.basename(ancestor));
+            ancestor = parent;
+        }
+    }
     return resolved.replace(/^([a-z]):/, (_, d) => `${d.toUpperCase()}:`);
 }
 
@@ -137,9 +156,19 @@ function readWorkspaceIdentity(workspaceName) {
  */
 function identityChange(expected, recorded) {
     if (!recorded || recorded.fingerprint === expected.fingerprint) return null;
-    const same = (a, b) => process.platform === 'win32' ? String(a).toLowerCase() === String(b).toLowerCase() : a === b;
+    const comparablePath = value => typeof value === 'string' && process.platform === 'win32'
+        ? canonicalize(value).toLowerCase() : value;
+    const same = (a, b) => comparablePath(a) === comparablePath(b);
     if (recorded.workspace && recorded.workspace !== expected.workspace) return 'foreign';
-    if (same(recorded.projectRoot, expected.projectRoot)) return 'sources';
+    if (same(recorded.projectRoot, expected.projectRoot)) {
+        // Older Windows markers hashed short paths. Do not mistake a spelling
+        // correction for changed sources or ownership of an external data dir.
+        if (process.platform === 'win32' && Array.isArray(recorded.sourceDirs) && Array.isArray(expected.sourceDirs)) {
+            const sources = value => JSON.stringify(value.map(comparablePath).sort());
+            if (sources(recorded.sourceDirs) === sources(expected.sourceDirs)) return null;
+        }
+        return 'sources';
+    }
     const ownDataDir = same(DATA_DIR, canonicalize(path.join(PROJECT_ROOT, '.codevis'))) || USING_LEGACY_DATA_DIR;
     return ownDataDir ? 'relocated' : 'foreign';
 }

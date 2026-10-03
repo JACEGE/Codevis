@@ -87,6 +87,48 @@ test('synchronizing an unknown task reports not found', async t => {
     assert.equal((await h.run('sync_task', { taskId: 'missing' })).status, 'NOT_FOUND');
 });
 
+for (const mode of ['task', 'complete', 'wave']) {
+    test(`${mode} sync preserves mixed-case graph paths and freshness after scope reservation`, async t => {
+        const h = await fixture(t);
+        const file = 'Notifications/Notifier.js';
+        const source = 'export function notify() { return true; }\n';
+        fs.mkdirSync(path.join(h.root, 'Notifications'));
+        const absolute = path.join(h.root, file);
+        fs.writeFileSync(absolute, source);
+        const scopeFile = process.platform === 'win32' ? file.toLowerCase() : file;
+        const contentHash = require('node:crypto').createHash('sha256').update(source).digest('hex');
+        await h.session.run(`MATCH (t:Task {taskId:'task'})
+            MERGE (f:File {path:$file}) SET f.sourceMtime=$mtime, f.contentHash=$hash, f.parseStatus='current'
+            CREATE (s:TaskScope {file:$scopeFile})
+            CREATE (n:Function {name:'notify', file:$file})
+            CREATE (f)-[:CONTAINS]->(n) CREATE (t)-[:AFFECTS]->(n) CREATE (t)-[:RESERVES]->(s)`,
+        { file, scopeFile, mtime: Math.ceil(fs.statSync(absolute).mtimeMs), hash: contentHash });
+        let result;
+        if (mode === 'complete') {
+            await h.session.run("MATCH (t:Task {taskId:'task'}) SET t.status='in_progress', t.assignedTo='audit'");
+            result = await h.run('complete_task', { taskId: 'task', agentId: 'audit', summary: 'No source changes needed' });
+        } else result = mode === 'task' ? await h.run('sync_task', { taskId: 'task' }) : await commitSyncWave(1, h.driver);
+        assert.equal(result.status, 'OK');
+        assert.equal(mode === 'wave' ? result.filesProcessed : result.graphSynced, 1);
+        const files = await h.session.run('MATCH (f:File) RETURN f.path AS path');
+        assert.deepEqual(files.records.map(r => r.get('path')), [file]);
+        const functions = await h.session.run('MATCH (f:Function) RETURN f.file AS file');
+        assert.deepEqual(functions.records.map(r => r.get('file')), [file]);
+        const { inspectGraphFreshness } = require('../scripts/impact/graph_freshness.cjs');
+        assert.equal((await inspectGraphFreshness(h.session, { projectRoot: h.root, sourceDirs: ['Notifications'] })).state, 'current');
+    });
+}
+
+test('scope-only synchronization uses disk spelling even before a File node exists', async t => {
+    const h = await fixture(t);
+    fs.writeFileSync(path.join(h.root, 'NewFile.js'), 'function fresh() {}');
+    const file = process.platform === 'win32' ? 'newfile.js' : 'NewFile.js';
+    await h.session.run("MATCH (t:Task {taskId:'task'}) CREATE (s:TaskScope {file:$file}) CREATE (t)-[:RESERVES]->(s)", { file });
+    assert.equal((await h.run('sync_task', { taskId: 'task' })).status, 'OK');
+    const files = await h.session.run('MATCH (f:File) RETURN f.path AS path');
+    assert.deepEqual(files.records.map(r => r.get('path')), ['NewFile.js']);
+});
+
 test('completing a nonexistent wave cannot activate the following wave', async t => {
     const h = await fixture(t);
     await h.session.run("MATCH (t:Task {taskId:'task'}) SET t.wave=2, t.status='backlog', t.waveStatus='pending'");

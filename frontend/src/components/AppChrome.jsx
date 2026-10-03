@@ -25,7 +25,7 @@ export function FullScreenTabShell({
             background: 'var(--bg)', color: 'var(--text)', overflow: 'hidden',
         }}>
             {connected === false && (
-                <div style={{ padding: '8px 16px', background: '#ef4444', color: '#fff', fontSize: 13, fontWeight: 600, textAlign: 'center', flexShrink: 0 }}>
+                <div style={{ padding: '8px 16px', background: 'var(--danger-soft)', color: 'var(--danger)', fontSize: 13, fontWeight: 600, textAlign: 'center', flexShrink: 0 }}>
                     No connection to the bridge ({bridgeUrl})
                 </div>
             )}

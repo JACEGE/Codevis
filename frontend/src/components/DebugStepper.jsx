@@ -1,35 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import BRIDGE_URL from '../bridgeUrl';
+import { buttonStyle } from '../theme/tokens';
 
-// The mode buttons used the .debug-mode-btn.active class, whose colours
-// (--accent-cyan on translucent white) come from when this panel was a dark HUD
-// overlay. It now renders in the light right-hand panel, where that active state
-// is all but invisible — you could not tell which mode you were in. These styles
-// are explicit and theme-independent, and match the tab bar's indigo accent so
-// "selected" looks the same everywhere in the app.
+// Selection and geometry follow the same control contract as other toolbars.
 const modeBtn = (active) => ({
     flex: 1,
-    padding: '7px 10px',
-    fontSize: 11,
-    fontWeight: active ? 600 : 500,
-    fontFamily: 'inherit',
-    cursor: 'pointer',
-    borderRadius: 6,
-    transition: 'background 0.15s, border-color 0.15s, color 0.15s',
-    color: active ? '#ffffff' : 'var(--muted, #888)',
-    background: active ? '#6366f1' : 'transparent',
-    border: `1px solid ${active ? '#6366f1' : 'var(--border, #e0e0e0)'}`,
+    ...buttonStyle('default', active),
 });
 
 const stepBtn = (disabled) => ({
-    width: 34,
-    height: 34,
-    fontSize: 13,
-    fontFamily: 'inherit',
-    borderRadius: 8,
-    border: '1px solid var(--border, #e0e0e0)',
-    background: 'transparent',
-    color: disabled ? 'var(--muted, #bbb)' : 'var(--text, #1a1a1a)',
+    width: 'var(--control-height)',
+    height: 'var(--control-height)',
+    padding: 0,
     opacity: disabled ? 0.4 : 1,
     cursor: disabled ? 'not-allowed' : 'pointer',
 });
@@ -166,20 +148,20 @@ function DebugStepper({
         // Override the .debug-stepper positioning: it still carries the fixed
         // bottom/translateX from its overlay days, but it sits in normal flow now.
         <div className="debug-stepper" style={{ position: 'static', transform: 'none', width: 'auto', padding: 14 }}>
-            <div style={{ marginBottom: 14, padding: 10, border: '1px solid var(--border, #e0e0e0)', borderRadius: 8 }}>
+            <div style={{ marginBottom: 14, padding: 10, border: "1px solid var(--border)", borderRadius: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 7 }}>A → Z route</div>
                 <input
                     aria-label="Search route destination"
                     value={routeQuery}
                     onChange={(event) => { setRouteQuery(event.target.value); setRouteTarget(''); }}
                     placeholder="Search nodes…"
-                    style={{ width: '100%', boxSizing: 'border-box', marginBottom: 6, padding: '7px 8px', borderRadius: 6, border: '1px solid var(--border, #ddd)', background: 'var(--surface, #fff)', color: 'var(--text, #1a1a1a)' }}
+                    style={{ width: '100%', boxSizing: 'border-box', marginBottom: 6, padding: '7px 8px', borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
                 />
                 <select
                     aria-label="Route destination"
                     value={routeTarget}
                     onChange={(event) => setRouteTarget(event.target.value)}
-                    style={{ width: '100%', minWidth: 0, padding: '7px 8px', borderRadius: 6, border: '1px solid var(--border, #ddd)', background: 'var(--surface, #fff)', color: 'var(--text, #1a1a1a)' }}
+                    style={{ width: '100%', minWidth: 0, padding: '7px 8px', borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
                 >
                     <option value="">Choose destination…</option>
                     {routeTargets.map((node) => (
@@ -193,7 +175,7 @@ function DebugStepper({
                         aria-label="Route relationship types"
                         value={routeRelations}
                         onChange={(event) => setRouteRelations(event.target.value)}
-                        style={{ flex: 1, minWidth: 0, padding: '6px 7px', borderRadius: 6, border: '1px solid var(--border, #ddd)', background: 'var(--surface, #fff)', color: 'var(--text, #1a1a1a)', fontSize: 11 }}
+                        style={{ flex: 1, minWidth: 0, padding: '6px 7px', borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", fontSize: 11 }}
                     >
                         <option value="calls-renders">Calls + renders</option>
                         <option value="calls">Calls only</option>
@@ -207,14 +189,14 @@ function DebugStepper({
                         {routePending ? 'Searching…' : 'Find route'}
                     </button>
                 </div>
-                {routeError && <div style={{ marginTop: 7, color: '#dc2626', fontSize: 11 }}>{routeError}</div>}
+                {routeError && <div style={{ marginTop: 7, color: "var(--danger)", fontSize: 11 }}>{routeError}</div>}
                 {routeResult?.status === 'NO_PATH' && (
-                    <div style={{ marginTop: 7, color: '#b45309', fontSize: 11 }}>
+                    <div style={{ marginTop: 7, color: "var(--warning)", fontSize: 11 }}>
                         No static route found within {routeResult.maxHops} hops.
                     </div>
                 )}
                 {routeResult?.status === 'OK' && (
-                    <div style={{ marginTop: 7, color: '#0f766e', fontSize: 11 }}>
+                    <div style={{ marginTop: 7, color: "var(--success)", fontSize: 11 }}>
                         {routeResult.paths.length} shortest route{routeResult.paths.length === 1 ? '' : 's'} · {routeResult.paths[0].hops} hop{routeResult.paths[0].hops === 1 ? '' : 's'}
                     </div>
                 )}
@@ -279,8 +261,8 @@ function DebugStepper({
             ) : (
                 <div style={{
                     margin: '14px 0', padding: '10px 12px', fontSize: 12, lineHeight: 1.5,
-                    color: 'var(--muted, #888)', background: 'rgba(127,127,127,0.08)',
-                    borderRadius: 6, border: '1px solid var(--border, #e0e0e0)',
+                    color: "var(--muted)", background: 'rgba(127,127,127,0.08)',
+                    borderRadius: 6, border: "1px solid var(--border)",
                 }}>
                     {hasPath
                         ? noPathExplanation()
@@ -292,7 +274,7 @@ function DebugStepper({
                         </div>
                     )}
                     {onInspect && (
-                        <button type="button" onClick={onInspect} style={{ ...stepBtn(false), width: 'auto', height: 30, marginTop: 8, padding: '0 10px', fontSize: 11 }}>
+                        <button type="button" onClick={onInspect} style={{ marginTop: 8 }}>
                             Open in Inspector
                         </button>
                     )}
@@ -333,7 +315,6 @@ function DebugStepper({
             {/* Controls */}
             <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <button
-                    style={{ ...stepBtn(false), width: 'auto', padding: '0 12px', fontSize: 11 }}
                     onClick={onReset}
                     title="Clear the selection and the traced route"
                 >

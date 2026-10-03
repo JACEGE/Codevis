@@ -28,11 +28,11 @@ export default function ScopeModeControl({ taskId, db, epic = false }) {
         finally { if (current === lifetime.current) setSaving(false); }
     }
     const active = policy && !['backlog', 'todo', 'open', 'done'].includes(policy.status);
-    return <section style={{ margin: '16px 0', fontSize: 13, color: '#334155', lineHeight: 1.5 }}>
+    return <section style={{ margin: '16px 0', fontSize: 13, color: "var(--text)", lineHeight: 1.5 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {epic ? 'Default edit mode' : 'Edit mode'}
             <select aria-label={epic ? 'Default edit mode' : 'Edit mode'} value={policy?.mode || 'inherit'}
-                style={{ color: '#1e293b', background: '#fff', border: '1px solid #94a3b8', borderRadius: 5, padding: '5px 8px' }}
+                style={{ color: "var(--text)", background: "var(--surface)", border: "1px solid var(--muted)", borderRadius: 5, padding: '5px 8px' }}
                 disabled={!policy || saving || (!epic && active)} onChange={change}>
                 <option value="inherit">Inherit {epic ? '(project default)' : '(Epic / project)'}</option>
                 <option value="open">Open</option><option value="strict">Strict</option><option value="flexible">Flexible</option>
@@ -41,6 +41,6 @@ export default function ScopeModeControl({ taskId, db, epic = false }) {
         <p>Open: free files, no planned scope required. Strict: planned files only. Flexible: explicitly expand into free files. All modes respect other tasks’ claims.</p>
         {policy && <p>{policy.lockingEnabled ? `Effective mode: ${policy.effectiveMode}.` : 'Project locking is disabled; edit modes are not enforced.'}
             {epic ? ' Changes apply when inherited tasks are next claimed.' : active ? ' Checkpoint and move to To Do before changing mode.' : ''}</p>}
-        {error && <p role="alert" style={{ color: '#b91c1c' }}>{error}</p>}
+        {error && <p role="alert" style={{ color: "var(--danger)" }}>{error}</p>}
     </section>;
 }

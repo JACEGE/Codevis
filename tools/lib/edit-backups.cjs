@@ -1,14 +1,16 @@
 const { createHash, randomUUID } = require('node:crypto');
-const { basename, resolve } = require('node:path');
+const { basename, resolve, relative } = require('node:path');
 const { resolvePhysicalPath } = require('../../lib/file-publication.cjs');
+const { canonicalize } = require('../../server/codevis-paths.cjs');
 
 function backupOwner(agentId) {
     return 'v2-' + createHash('sha256').update(String(agentId || '')).digest('hex').slice(0, 24);
 }
 
-function backupFileIdentity(file, projectRoot) {
+function backupFileIdentity(file, projectRoot, legacy = false) {
     const absolute = resolvePhysicalPath(resolve(projectRoot, file));
-    return createHash('sha256').update(process.platform === 'win32' ? absolute.toLowerCase() : absolute).digest('hex');
+    const canonical = legacy ? absolute : canonicalize(absolute);
+    return createHash('sha256').update(process.platform === 'win32' ? canonical.toLowerCase() : canonical).digest('hex');
 }
 
 function createBackupToken(file, agentId, projectRoot = process.cwd()) {
@@ -18,7 +20,17 @@ function createBackupToken(file, agentId, projectRoot = process.cwd()) {
 
 function backupFileMatches(token, file, projectRoot) {
     const identity = /^\d+_v2-[a-f0-9]{24}_[a-f0-9-]{36}_f-([a-f0-9]{64})_/.exec(token)?.[1];
-    return identity ? identity === backupFileIdentity(file, projectRoot) : null;
+    if (!identity) return null;
+    if (identity === backupFileIdentity(file, projectRoot)) return true;
+    if (process.platform !== 'win32') return false;
+    // Keep pre-canonicalization backups usable after upgrading a registration
+    // that still supplies an 8.3 root. Only try aliases of this same project,
+    // never another environment-selected workspace with an identical basename.
+    const roots = [projectRoot, process.env.CODEVIS_PROJECT_DIR].filter(Boolean);
+    const expectedRoot = canonicalize(projectRoot).toLowerCase();
+    const legacyFile = relative(canonicalize(projectRoot), canonicalize(resolve(projectRoot, file)));
+    return roots.some(root => canonicalize(root).toLowerCase() === expectedRoot
+        && identity === backupFileIdentity(legacyFile, root, true));
 }
 
 // Backups of the same file taken AFTER `token` — by any agent. Every MCP edit

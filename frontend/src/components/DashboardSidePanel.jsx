@@ -62,7 +62,7 @@ export default function DashboardSidePanel({
             id="right-panel-container"
             style={{
                 gridArea: 'kanban', display: 'flex', flexDirection: 'column',
-                overflow: 'hidden', background: 'var(--surface, #ffffff)',
+                overflow: 'hidden', background: "var(--surface)",
             }}
         >
             <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
@@ -128,8 +128,8 @@ export default function DashboardSidePanel({
                             onInspect={() => onSelectTab('inspector')}
                         />
                     ) : (
-                        <div style={{ padding: 16, color: 'var(--muted, #888)', fontSize: 13, lineHeight: 1.6 }}>
-                            <strong style={{ color: 'var(--text, #1a1a1a)' }}>Pathfinder</strong> — click a node in the graph to walk its CALLS/RENDERS tree and step along it.
+                        <div style={{ padding: 16, color: "var(--muted)", fontSize: 13, lineHeight: 1.6 }}>
+                            <strong style={{ color: "var(--text)" }}>Pathfinder</strong> — click a node in the graph to walk its CALLS/RENDERS tree and step along it.
                             <br /><button className="ui-button" onClick={onSearch}>Find a starting node</button><br />
                             Difference: <em>Inspector</em> shows the static details of one node (code, props, AST); <em>Pathfinder</em> follows where that node leads and highlights the route in the graph.
                         </div>

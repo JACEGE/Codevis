@@ -23,10 +23,9 @@ export default function KanbanTaskCard({
                 gap: '6px',
                 alignItems: 'flex-start',
                 opacity: dragged ? 0.4 : 1,
-                borderLeft: `4px solid ${agentColor}`,
-                outline: isOpen ? `2px solid ${agentColor}` : 'none',
+                outline: isOpen ? '2px solid var(--accent)' : 'none',
                 backgroundColor: selected ? 'var(--surface-hover)' : 'var(--surface-raised)',
-                boxShadow: selected ? '0 0 0 2px #93c5fd' : undefined,
+                boxShadow: selected ? '0 0 0 2px var(--accent)' : undefined,
             }}
             draggable
             onDragStart={(event) => onDragStart(event, task)}
@@ -58,8 +57,8 @@ export default function KanbanTaskCard({
                                 lineHeight: 1,
                                 padding: '2px 5px',
                                 borderRadius: 999,
-                                background: `${epicAccent}33`,
-                                color: '#9a3d3d',
+                                background: `color-mix(in srgb, ${epicAccent} 20%, transparent)`,
+                                color: "var(--danger)",
                             }}
                         >
                             {task.seqIndex}
@@ -97,8 +96,8 @@ export function affectedNodeNames(task) {
 
 export function getAgentColor(agentId) {
     if (!agentId) return null;
-    if (agentId === 'lead' || agentId.startsWith('lead-')) return '#ffd700';
-    return '#84cc16';
+    if (agentId === 'lead' || agentId.startsWith('lead-')) return 'var(--warning)';
+    return 'var(--info)';
 }
 
 function waveTitle(task) {
@@ -117,8 +116,8 @@ function waveStyle(status) {
         lineHeight: 1,
         padding: '2px 6px',
         borderRadius: 999,
-        background: active ? 'rgba(14,165,233,0.18)' : 'rgba(99,102,241,0.12)',
-        color: active ? '#0369a1' : '#6366f1',
-        border: `1px solid ${active ? 'rgba(3,105,161,0.35)' : 'rgba(99,102,241,0.3)'}`,
+        background: active ? 'var(--accent-soft)' : 'var(--surface-hover)',
+        color: active ? 'var(--accent)' : 'var(--muted)',
+        border: '1px solid var(--border)',
     };
 }

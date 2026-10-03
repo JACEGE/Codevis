@@ -269,7 +269,10 @@ try {
   const codexConfig = parseToml(await readFile(join(projectDir, '.codex/config.toml'), 'utf8')).mcp_servers.codevis_graph;
   assert.equal(codexConfig.env.CODEVIS_ROLE, 'lead');
   const expectedProjectRoot = await realpath(projectDir);
-  assert.equal(codexConfig.cwd, expectedProjectRoot);
+  // Windows TEMP may use an 8.3 alias (RUNNER~1). A generated cwd using that
+  // spelling still selects the same directory; compare physical paths on both
+  // sides, while keeping the MCP-reported canonical identity check below.
+  assert.equal(await realpath(codexConfig.cwd), expectedProjectRoot);
   mcp = new Client({ name: 'codex-init-smoke', version: '1.0' }, { capabilities: {} });
   await mcp.connect(new StdioClientTransport({
     ...codexConfig, env: { ...process.env, ...testEnv, ...codexConfig.env }, stderr: 'pipe',

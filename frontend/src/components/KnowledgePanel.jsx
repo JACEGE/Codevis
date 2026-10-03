@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import BRIDGE_URL from '../bridgeUrl';
 
 const KINDS = {
-    knowledge: { label: 'Knowledge', icon: '📚', color: '#0f766e' },
-    epics: { label: 'Epics', icon: '◈', color: '#7c3aed' },
-    tasks: { label: 'Tasks', icon: '◆', color: '#4f46e5' },
+    knowledge: { label: 'Knowledge', icon: '📚', color: "var(--success)" },
+    epics: { label: 'Epics', icon: '◈', color: "var(--violet)" },
+    tasks: { label: 'Tasks', icon: '◆', color: "var(--accent)" },
 };
 
 export default function KnowledgePanel({ db, onShowNode, onInspectNode, onSelectTab }) {
@@ -52,12 +52,12 @@ export default function KnowledgePanel({ db, onShowNode, onInspectNode, onSelect
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-            <div style={{ padding: 10, borderBottom: '1px solid var(--border,#ddd)' }}>
+            <div style={{ padding: 10, borderBottom: "1px solid var(--border)" }}>
                 <input aria-label="Search context" value={query} onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search knowledge, epics and tasks…"
-                    style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid var(--border,#ddd)', borderRadius: 6, background: 'var(--bg,#f5f5f0)', color: 'var(--text,#222)' }} />
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg)", color: "var(--text)" }} />
                 <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} aria-label="Sort context items"
-                    style={{ width: '100%', boxSizing: 'border-box', marginTop: 7, padding: '6px 8px', border: '1px solid var(--border,#ddd)', borderRadius: 6, background: 'var(--surface,#fff)', color: 'var(--text,#222)', fontSize: 12 }}>
+                    style={{ width: '100%', boxSizing: 'border-box', marginTop: 7, padding: '6px 8px', border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)", fontSize: 12 }}>
                     <option value="created-desc">Newest created first</option>
                     <option value="created-asc">Oldest created first</option>
                     <option value="name">Name A–Z</option>
@@ -65,16 +65,15 @@ export default function KnowledgePanel({ db, onShowNode, onInspectNode, onSelect
                 </select>
                 <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
                     {Object.entries(KINDS).map(([kind, meta]) => (
-                        <button key={kind} aria-pressed={enabled[kind]} onClick={() => setEnabled((old) => ({ ...old, [kind]: !old[kind] }))}
-                            style={{ padding: '4px 8px', borderRadius: 12, border: `1px solid ${meta.color}`, cursor: 'pointer', fontSize: 11, color: enabled[kind] ? '#fff' : meta.color, background: enabled[kind] ? meta.color : 'transparent' }}>
+                        <button className="ui-button" key={kind} aria-pressed={enabled[kind]} onClick={() => setEnabled((old) => ({ ...old, [kind]: !old[kind] }))}>
                             {meta.icon} {meta.label} ({data[kind]?.length || 0})
                         </button>
                     ))}
                 </div>
             </div>
             <div style={{ flex: 1, overflow: 'auto', minHeight: 0, padding: '6px 0' }}>
-                {loading && <div style={{ padding: 14, color: 'var(--muted,#888)' }}>Loading context…</div>}
-                {error && <div style={{ padding: 14, color: '#b91c1c' }}>{error}</div>}
+                {loading && <div style={{ padding: 14, color: "var(--muted)" }}>Loading context…</div>}
+                {error && <div style={{ padding: 14, color: "var(--danger)" }}>{error}</div>}
                 {!loading && !error && !sections.some(({kind, items}) => enabled[kind] && items.length > 0) && (
                     <div style={{ padding: 16 }}>
                         <p>{query.trim() ? 'No results for this search in the selected categories.' : Object.values(enabled).some(Boolean) ? 'No context items yet in the selected categories.' : 'Choose a category above to show context items.'}</p>
@@ -85,19 +84,19 @@ export default function KnowledgePanel({ db, onShowNode, onInspectNode, onSelect
                     <section key={kind} style={{ marginBottom: 12 }}>
                         <button onClick={() => setCollapsed((old) => ({ ...old, [kind]: !old[kind] }))}
                             aria-expanded={!collapsed[kind]}
-                            style={{ width: '100%', display: 'flex', justifyContent: 'space-between', padding: '8px 10px', border: '1px solid var(--border,#ddd)', borderRadius: 7, background: 'var(--surface-soft,rgba(127,127,127,.06))', cursor: 'pointer', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', color: meta.color }}>
+                            style={{ width: '100%', display: 'flex', justifyContent: 'space-between',  border: "1px solid var(--border)",  "--button-bg": 'var(--surface-soft,rgba(127,127,127,.06))', cursor: 'pointer',   textTransform: 'uppercase', "--button-text": meta.color }}>
                             <span>{meta.icon} {meta.label} ({items.length})</span>
                             <span>{collapsed[kind] ? '▸' : '▾'}</span>
                         </button>
                         {!collapsed[kind] && items.map((item) => (
-                            <div key={item.id} style={{ padding: '7px 10px', borderBottom: '1px solid var(--border,#eee)', display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
+                            <div key={item.id} style={{ padding: '7px 10px', borderBottom: "1px solid var(--border)", display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
                                 <button onClick={() => onInspectNode?.(item.id)} title="Open in Inspector"
-                                    style={{ minWidth: 0, border: 0, padding: 0, background: 'transparent', textAlign: 'left', cursor: 'pointer', color: 'var(--text,#222)' }}>
+                                    style={{ minWidth: 0, border: 0,  "--button-bg": 'transparent', textAlign: 'left', cursor: 'pointer', "--button-text": "var(--text)" }}>
                                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12.5, fontWeight: 600 }}>{item.name}</div>
-                                    <div style={{ fontSize: 10.5, color: 'var(--muted,#888)', marginTop: 2 }}>{item.taskId || item.category || item.status || meta.label}</div>
+                                    <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 2 }}>{item.taskId || item.category || item.status || meta.label}</div>
                                 </button>
                                 <button onClick={() => onShowNode?.(item.id, kind === 'epics' ? 2 : 1)}
-                                    style={{ border: `1px solid ${meta.color}`, color: meta.color, background: 'transparent', borderRadius: 5, padding: '4px 7px', cursor: 'pointer', fontSize: 11 }}>
+                                    style={{ border: `1px solid ${meta.color}`, "--button-text": meta.color, "--button-bg": 'transparent',   cursor: 'pointer',  }}>
                                     Show in graph
                                 </button>
                             </div>

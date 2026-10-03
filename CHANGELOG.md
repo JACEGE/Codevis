@@ -4,6 +4,28 @@ All notable changes to CodeVis are documented here.
 
 ## Unreleased
 
+## 1.0.0-beta.5 - 2026-10-02
+
+- Added CodeFlow requirements, acceptance criteria, test intentions, phase gates,
+  implementation links and recorded quality evidence, with a shared process view
+  in the dashboard and MCP tools. Test intentions remain distinct from executed
+  tests and verified results.
+- Unified the dashboard around graphite and steel-blue dark and light themes,
+  shared semantic colour tokens and consistent button geometry and states,
+  including graph labels, diagrams and the terminal.
+- Kept dashboard navigation in one always-visible header row with grouped menus;
+  improved ROS diagram zoom and publisher/subscriber connection inspection.
+- Preserved CodeFlow artifact-snapshot integrity and test evidence, and stopped
+  Windows task-scope synchronization from creating differently cased File nodes.
+- Unified Windows long-path, short-path and case-insensitive workspace identities
+  across daemon discovery, diagnostics and edit-backup recovery.
+- Isolated the offline demo's database, process files and logs from development
+  workspaces, and waited for verified dashboard readiness before capture.
+- Updated vulnerable dependencies including engine.io, fast-uri, ip-address,
+  undici and DOMPurify (3.4.16, addressing GHSA-p98j-92pf-mc4p).
+- Kept the proposed browser-navigation crawler outside the CodeVis roadmap; it
+  is not a feature or command provided by this release.
+
 - Security: the lock-guard and bash-guard PreToolUse hooks no longer answer
   `permissionDecision: "allow"` when they have nothing to block. That answer
   made Claude Code skip its permission prompt, so in a default setup (locking

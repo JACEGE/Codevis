@@ -175,7 +175,7 @@ function Section({ title, count, children, defaultOpen = true, accent }) {
             >
                 <span style={{ opacity: 0.5, fontSize: 9 }}>{open ? '▼' : '▶'}</span>
                 {title}
-                {count != null && <span className="inspector-count" style={accent ? { background: `${accent}18`, color: accent } : undefined}>{count}</span>}
+                {count != null && <span className="inspector-count" style={accent ? { background: `color-mix(in srgb, ${accent} 9%, transparent)`, color: accent } : undefined}>{count}</span>}
             </h3>
             {open && children}
         </div>
@@ -365,11 +365,11 @@ function InspectorSidebar({
                 style={{
                     height: '100%', display: 'flex', flexDirection: 'column',
                     alignItems: 'center', justifyContent: 'center', gap: 8,
-                    textAlign: 'center', padding: 24, color: 'var(--muted, #888)',
+                    textAlign: 'center', padding: 24, color: "var(--muted)",
                 }}
             >
                 <div style={{ fontSize: 36, opacity: 0.4 }}>🔍</div>
-                <div style={{ fontWeight: 600, color: 'var(--text, #1a1a1a)' }}>
+                <div style={{ fontWeight: 600, color: "var(--text)" }}>
                     No node selected
                 </div>
                 <div style={{ fontSize: 13, lineHeight: 1.5 }}>
@@ -382,15 +382,15 @@ function InspectorSidebar({
 
     // Flags that say something about the code, as short badges rather than rows.
     const badges = [];
-    if (node?.isAsync) badges.push({ text: 'async', color: '#0369a1' });
-    if (node?.isHook) badges.push({ text: 'hook', color: '#7c3aed' });
-    if (node?.isComponent) badges.push({ text: 'component', color: '#0891b2' });
-    if (node?.isHttpHandler) badges.push({ text: 'http', color: '#c2410c' });
-    if (node?.locked && node?.lockedBy) badges.push({ text: `🔒 ${node.lockedBy}`, color: '#b45309' });
+    if (node?.isAsync) badges.push({ text: 'async', color: "var(--info)" });
+    if (node?.isHook) badges.push({ text: 'hook', color: "var(--violet)" });
+    if (node?.isComponent) badges.push({ text: 'component', color: 'var(--info)' });
+    if (node?.isHttpHandler) badges.push({ text: 'http', color: "var(--warning)" });
+    if (node?.locked && node?.lockedBy) badges.push({ text: `🔒 ${node.lockedBy}`, color: "var(--warning)" });
     if (node?.lockStatus === 'conflict' || node?.lockStatus === 'blocked') {
-        badges.push({ text: 'CONFLICT', color: '#dc2626' });
+        badges.push({ text: 'CONFLICT', color: "var(--danger)" });
     }
-    if (node?.lastError) badges.push({ text: '⚠ error', color: '#dc2626' });
+    if (node?.lastError) badges.push({ text: '⚠ error', color: "var(--danger)" });
 
     return (
         <div className="hud-panel inspector-sidebar">
@@ -413,9 +413,9 @@ function InspectorSidebar({
                             onClick={copyLocation}
                             title="Copy path:line"
                             style={{
-                                border: '1px solid var(--border, #ddd)', background: 'transparent',
-                                borderRadius: 4, fontSize: 10, padding: '1px 6px', cursor: 'pointer',
-                                color: 'var(--muted, #888)', fontFamily: 'inherit',
+                                border: "1px solid var(--border)", "--button-bg": 'transparent',
+                                   cursor: 'pointer',
+                                "--button-text": "var(--muted)",
                             }}
                         >
                             copy
@@ -431,7 +431,7 @@ function InspectorSidebar({
                         <span
                             key={b.text}
                             className="inspector-label-tag"
-                            style={{ background: `${b.color}14`, color: b.color, borderColor: `${b.color}33` }}
+                            style={{ background: `color-mix(in srgb, ${b.color} 8%, transparent)`, color: b.color, borderColor: `color-mix(in srgb, ${b.color} 20%, transparent)` }}
                         >
                             {b.text}
                         </span>
@@ -442,7 +442,7 @@ function InspectorSidebar({
                     view is actually showing. A node whose neighbours were left
                     out by the node budget otherwise looks like a leaf. */}
                 {detail && (
-                    <div style={{ fontSize: 11, color: 'var(--muted, #888)', marginTop: 4 }}>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
                         {detail.totalEdges} edge{detail.totalEdges === 1 ? '' : 's'} in the graph
                         {astCount > 0 && `, ${astCount} of them AST tokens (not listed)`}
                         {detail.truncated && ' — list truncated'}
@@ -450,24 +450,24 @@ function InspectorSidebar({
                 )}
 
                 {node?.renamedFrom && (
-                    <div style={{ fontSize: 11, color: '#b45309', marginTop: 4 }}>
+                    <div style={{ fontSize: 11, color: "var(--warning)", marginTop: 4 }}>
                         previously named <code>{node.renamedFrom}</code>
                         {fmtDate(node.renamedAt) ? ` (${fmtDate(node.renamedAt)})` : ''}
                     </div>
                 )}
                 {node?.movedFrom && (
-                    <div style={{ fontSize: 11, color: '#b45309', marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: "var(--warning)", marginTop: 2 }}>
                         previously in <code>{node.movedFrom}</code>
                     </div>
                 )}
 
                 {loading && (
-                    <div style={{ fontSize: 11, color: 'var(--muted, #888)', marginTop: 6 }}>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
                         loading details…
                     </div>
                 )}
                 {detailError && (
-                    <div style={{ fontSize: 11, color: '#dc2626', marginTop: 6 }}>
+                    <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 6 }}>
                         Could not load details: {detailError}
                     </div>
                 )}
@@ -480,9 +480,9 @@ function InspectorSidebar({
                         onClick={() => onExpandAst(debugNode)}
                         title="Load this node's atomic level (variables, control flow, statements) into the graph"
                         style={{
-                            marginTop: 10, padding: '6px 12px', fontSize: 12, fontWeight: 600,
-                            color: '#fff', background: '#6366f1', border: 'none',
-                            borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
+                            marginTop: 10,
+                            "--button-text": "var(--on-accent)", "--button-bg": "var(--accent-strong)", "--button-hover": "var(--accent-hover)", border: 'none',
+                             cursor: 'pointer',
                         }}
                     >
                         ⚛ Show AST level
@@ -495,9 +495,9 @@ function InspectorSidebar({
                         title="Use this node as the start of an A-to-Z route search"
                         style={{
                             marginTop: 8, marginLeft: onExpandAst && !spec ? 6 : 0,
-                            padding: '6px 12px', fontSize: 12, fontWeight: 600,
-                            color: '#fff', background: '#0f766e', border: 'none',
-                            borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
+
+                            "--button-text": "var(--on-accent)", "--button-bg": "var(--accent-strong)", "--button-hover": "var(--accent-hover)", border: 'none',
+                             cursor: 'pointer',
                         }}
                     >
                         Find route from here
@@ -512,12 +512,12 @@ function InspectorSidebar({
                 Klasse er gehört, wie er laut Diagramm aussieht, und ob dahinter
                 schon Code steht. Genau das ist dieser Block. */}
             {spec && (
-                <Section title="From the diagram" accent="#f43f5e">
+                <Section title="From the diagram" accent="var(--danger)">
                     {spec.diagram && (
                         <div style={{ fontSize: 12, marginBottom: 6 }}>
                             {spec.diagram.title || spec.diagram.specId}
                             {spec.diagram.sourceFile && (
-                                <div style={{ fontSize: 11, color: 'var(--muted,#888)', fontFamily: 'ui-monospace, monospace' }}>
+                                <div style={{ fontSize: 11, color: "var(--muted)", fontFamily: 'ui-monospace, monospace' }}>
                                     {spec.diagram.sourceFile}
                                 </div>
                             )}
@@ -552,21 +552,21 @@ function InspectorSidebar({
                     {spec.memberStatus ? (
                         spec.memberStatus.implemented ? (
                             <div style={{ fontSize: 12 }}>
-                                <span style={{ color: '#16a34a' }}>● Implemented in </span>
+                                <span style={{ color: "var(--success)" }}>● Implemented in </span>
                                 <button
                                     onClick={() => onSelectNode && onSelectNode(spec.memberStatus.fn.uid)}
                                     title="Go to function"
                                     style={{
-                                        border: 'none', background: 'transparent', padding: 0,
-                                        color: '#0369a1', cursor: onSelectNode ? 'pointer' : 'default',
-                                        fontFamily: 'inherit', fontSize: 12, textDecoration: 'underline',
+                                        border: 'none', "--button-bg": 'transparent',
+                                        "--button-text": "var(--info)", cursor: onSelectNode ? 'pointer' : 'default',
+                                          textDecoration: 'underline',
                                     }}
                                 >
                                     {spec.memberStatus.ownerRealized}.{spec.memberStatus.fn.name}
                                 </button>
                             </div>
                         ) : (
-                            <div style={{ fontSize: 12, color: '#b45309' }}>
+                            <div style={{ fontSize: 12, color: "var(--warning)" }}>
                                 {spec.memberStatus.ownerRealized
                                     ? `○ Missing from ${spec.memberStatus.ownerRealized}`
                                     : `○ ${spec.memberStatus.owner} is not implemented yet`}
@@ -574,24 +574,24 @@ function InspectorSidebar({
                         )
                     ) : !spec.bindable ? null : spec.realizedBy ? (
                         <div style={{ fontSize: 12 }}>
-                            <span style={{ color: '#16a34a' }}>● Implemented by </span>
+                            <span style={{ color: "var(--success)" }}>● Implemented by </span>
                             <button
                                 onClick={() => onSelectNode && onSelectNode(spec.realizedBy.uid)}
                                 title="Go to code node"
                                 style={{
-                                    border: 'none', background: 'transparent', padding: 0,
-                                    color: '#0369a1', cursor: onSelectNode ? 'pointer' : 'default',
-                                    fontFamily: 'inherit', fontSize: 12, textDecoration: 'underline',
+                                    border: 'none', "--button-bg": 'transparent',
+                                    "--button-text": "var(--info)", cursor: onSelectNode ? 'pointer' : 'default',
+                                      textDecoration: 'underline',
                                 }}
                             >
                                 {spec.realizedBy.label} {spec.realizedBy.name}
                             </button>
                             {spec.realizedBy.file && (
-                                <div style={{ fontSize: 11, color: 'var(--muted,#888)' }}>{spec.realizedBy.file}</div>
+                                <div style={{ fontSize: 11, color: "var(--muted)" }}>{spec.realizedBy.file}</div>
                             )}
                         </div>
                     ) : (
-                        <div style={{ fontSize: 12, color: '#b45309' }}>
+                        <div style={{ fontSize: 12, color: "var(--warning)" }}>
                             ○ Not implemented — {spec.binding === 'ambiguous'
                                 ? 'multiple nodes match this name; binding unresolved'
                                 : 'no code node with this name'}
@@ -600,7 +600,7 @@ function InspectorSidebar({
 
                     {spec.members && spec.members.length > 0 && (
                         <div style={{ marginTop: 8 }}>
-                            <div style={{ fontSize: 11, color: 'var(--muted,#888)', marginBottom: 3 }}>
+                            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 3 }}>
                                 Declared in diagram ({spec.members.length})
                             </div>
                             {spec.members.map((m) => (
@@ -619,7 +619,7 @@ function InspectorSidebar({
 
             {isWorkflow&&<FlowNodeDetails node={node} db={db}/>}
             {isTask && (node?.description || node?.status) && (
-                <Section title="Task" accent="#6366f1">
+                <Section title="Task" accent="var(--accent-strong)">
                     <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
                         {node.status && <span className="inspector-label-tag">{node.status}</span>}
                         {node.priority && <span className="inspector-label-tag">{node.priority}</span>}
@@ -627,12 +627,12 @@ function InspectorSidebar({
                         {node.taskId && <span className="inspector-label-tag">{node.taskId}</span>}
                     </div>
                     {node.description && (
-                        <div style={{ fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap', color: 'var(--text, #1a1a1a)' }}>
+                        <div style={{ fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap', color: "var(--text)" }}>
                             {node.description}
                         </div>
                     )}
                     {node.summary && (
-                        <div style={{ fontSize: 11, lineHeight: 1.6, marginTop: 6, color: '#047857' }}>
+                        <div style={{ fontSize: 11, lineHeight: 1.6, marginTop: 6, color: 'var(--success)' }}>
                             {node.summary}
                         </div>
                     )}
@@ -640,7 +640,7 @@ function InspectorSidebar({
             )}
 
             {isEpic && (
-                <Section title="Epic" accent="#7c3aed">
+                <Section title="Epic" accent="var(--violet)">
                     <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
                         {node.status && <span className="inspector-label-tag">{node.status}</span>}
                         {node.priority && <span className="inspector-label-tag">{node.priority}</span>}
@@ -649,11 +649,11 @@ function InspectorSidebar({
                     {node.description && <div style={{ fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{node.description}</div>}
                     {node.workInstructions && (
                         <div style={{ marginTop: 8 }}>
-                            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--muted,#888)', textTransform: 'uppercase' }}>Work instructions</div>
+                            <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--muted)", textTransform: 'uppercase' }}>Work instructions</div>
                             <div style={{ fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap', marginTop: 3 }}>{node.workInstructions}</div>
                         </div>
                     )}
-                    {node.summary && <div style={{ fontSize: 11, lineHeight: 1.6, marginTop: 8, color: '#047857' }}>{node.summary}</div>}
+                    {node.summary && <div style={{ fontSize: 11, lineHeight: 1.6, marginTop: 8, color: 'var(--success)' }}>{node.summary}</div>}
                 </Section>
             )}
 
@@ -668,20 +668,20 @@ function InspectorSidebar({
                         <pre
                             style={{
                                 margin: 0, fontFamily: 'var(--font-mono, monospace)', fontSize: 11,
-                                lineHeight: 1.5, background: 'var(--bg, #fafafa)',
-                                border: '1px solid var(--border, #ddd)', borderRadius: 4,
+                                lineHeight: 1.5, background: "var(--bg)",
+                                border: "1px solid var(--border)", borderRadius: 4,
                                 padding: '8px 0', maxHeight: 320, overflow: 'auto',
                             }}
                         >
                             {source.source.split('\n').map((line, i) => (
                                 <div key={i} style={{ display: 'flex', gap: 10, padding: '0 8px' }}>
                                     <span style={{
-                                        color: 'var(--muted, #999)', textAlign: 'right', minWidth: 32,
+                                        color: "var(--muted)", textAlign: 'right', minWidth: 32,
                                         userSelect: 'none', flexShrink: 0,
                                     }}>
                                         {source.firstLine + i}
                                     </span>
-                                    <span style={{ whiteSpace: 'pre', color: 'var(--text, #1a1a1a)' }}>{line}</span>
+                                    <span style={{ whiteSpace: 'pre', color: "var(--text)" }}>{line}</span>
                                 </div>
                             ))}
                         </pre>
@@ -691,17 +691,17 @@ function InspectorSidebar({
                                 className="inspector-ast-btn"
                                 onClick={loadFullSource}
                                 disabled={loadingFullSource}
-                                style={{ marginTop: 8, width: '100%', padding: '7px 10px', cursor: loadingFullSource ? 'wait' : 'pointer' }}
+                                style={{ marginTop: 8, width: '100%',  cursor: loadingFullSource ? 'wait' : 'pointer' }}
                             >
                                 {loadingFullSource ? 'Loading complete file…' : `Show complete file (${source.totalLines} lines)`}
                             </button>
                         )}
-                        {sourceError && <div role="alert" style={{ color: '#dc2626' }}>{sourceError}</div>}
+                        {sourceError && <div role="alert" style={{ color: "var(--danger)" }}>{sourceError}</div>}
                         </>
                     ) : (
                         <>
                             <div className="inspector-snippet">{node.bodySnippet}</div>
-                            <div style={{ fontSize: 10, color: 'var(--muted, #888)', marginTop: 4 }}>
+                            <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4 }}>
                                 File not readable — stored snippet from the last build.
                                 {source?.reason ? ` (${source.reason})` : ''}
                             </div>
@@ -749,7 +749,7 @@ function InspectorSidebar({
                         <RelGroup key={group.key} group={group} onSelect={selectRelationship} />
                     ))}
                     {node?.deps?.length > 0 && (
-                        <div style={{ fontSize: 11, marginTop: 6, color: 'var(--muted, #888)' }}>
+                        <div style={{ fontSize: 11, marginTop: 6, color: "var(--muted)" }}>
                             Dependencies: <code>{node.deps.join(', ')}</code>
                         </div>
                     )}
@@ -758,22 +758,22 @@ function InspectorSidebar({
 
             {/* ── Wissen ───────────────────────────────────────────────────── */}
             {(annotations.length > 0 || annotationError) && (
-                <Section title="Semantic annotations" count={annotations.length} accent="#7c3aed">
+                <Section title="Semantic annotations" count={annotations.length} accent="var(--violet)">
                     {annotationError && (
-                        <div style={{ color: '#dc2626', fontSize: 11, marginBottom: 8 }}>{annotationError}</div>
+                        <div style={{ color: "var(--danger)", fontSize: 11, marginBottom: 8 }}>{annotationError}</div>
                     )}
                     {annotations.map((annotation) => (
-                        <div key={annotation.annotationId} style={{ marginBottom: 10, padding: 9, border: '1px solid var(--border, #e0e0e0)', borderRadius: 7 }}>
+                        <div key={annotation.annotationId} style={{ marginBottom: 10, padding: 9, border: "1px solid var(--border)", borderRadius: 7 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                <span className="inspector-label-tag" style={{ color: '#7c3aed' }}>{annotation.tag}</span>
+                                <span className="inspector-label-tag" style={{ color: "var(--violet)" }}>{annotation.tag}</span>
                                 <span className="inspector-label-tag">{annotation.status}</span>
-                                <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--muted, #888)' }}>
+                                <span style={{ marginLeft: 'auto', fontSize: 10, color: "var(--muted)" }}>
                                     confidence {Math.round((annotation.confidence ?? 0) * 100)}% · weight {Math.round((annotation.weight ?? 0) * 100)}%
                                 </span>
                             </div>
                             <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.5 }}>{annotation.evidence}</div>
                             {(annotation.model || annotation.createdBy) && (
-                                <div style={{ marginTop: 4, fontSize: 10, color: 'var(--muted, #888)' }}>
+                                <div style={{ marginTop: 4, fontSize: 10, color: "var(--muted)" }}>
                                     proposed by {annotation.model || annotation.createdBy}
                                 </div>
                             )}
@@ -783,7 +783,7 @@ function InspectorSidebar({
                                         type="button"
                                         disabled={annotationSaving === annotation.annotationId}
                                         onClick={() => reviewAnnotation(annotation.annotationId, 'accepted')}
-                                        style={{ padding: '4px 9px', border: 0, borderRadius: 5, background: '#16a34a', color: '#fff', cursor: 'pointer', fontSize: 11 }}
+                                        className="ui-button ui-button--primary"
                                     >
                                         Accept
                                     </button>
@@ -791,7 +791,7 @@ function InspectorSidebar({
                                         type="button"
                                         disabled={annotationSaving === annotation.annotationId}
                                         onClick={() => reviewAnnotation(annotation.annotationId, 'rejected')}
-                                        style={{ padding: '4px 9px', border: 0, borderRadius: 5, background: '#dc2626', color: '#fff', cursor: 'pointer', fontSize: 11 }}
+                                        className="ui-button ui-button--danger"
                                     >
                                         Reject
                                     </button>
@@ -803,13 +803,13 @@ function InspectorSidebar({
             )}
 
             {detail?.knowledge?.length > 0 && (
-                <Section title="Knowledge" count={detail.knowledge.length} accent="#0d9488">
+                <Section title="Knowledge" count={detail.knowledge.length} accent="var(--success)">
                     {detail.knowledge.map(k => (
                         <div key={k.id} style={{ marginBottom: 10 }}>
                             <div
                                 onClick={() => selectNode(k.id)}
                                 style={{
-                                    fontSize: 12, fontWeight: 600, color: '#0d9488',
+                                    fontSize: 12, fontWeight: 600, color: "var(--success)",
                                     cursor: onSelectNode ? 'pointer' : 'default',
                                 }}
                             >
@@ -821,7 +821,7 @@ function InspectorSidebar({
                             {k.content && (
                                 <div style={{
                                     fontSize: 11, lineHeight: 1.6, whiteSpace: 'pre-wrap',
-                                    color: 'var(--text, #1a1a1a)', marginTop: 3,
+                                    color: "var(--text)", marginTop: 3,
                                 }}>
                                     {k.content}
                                 </div>
@@ -833,28 +833,28 @@ function InspectorSidebar({
 
             {/* Knowledge node itself — editable, as before. */}
             {isKnowledge && (
-                <Section title="Content" accent="#0d9488">
+                <Section title="Content" accent="var(--success)">
                     {!editing ? (
                         <>
                             <div style={{
                                 fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap',
-                                color: 'var(--text, #1a1a1a)',
+                                color: "var(--text)",
                             }}>
                                 {knowledgeContent || (
-                                    <span style={{ color: 'var(--muted, #888)' }}>No content yet.</span>
+                                    <span style={{ color: "var(--muted)" }}>No content yet.</span>
                                 )}
                             </div>
                             {node.kind === 'markdown' ? (
-                                <p style={{ fontSize: 12, color: 'var(--muted, #888)' }}>
+                                <p style={{ fontSize: 12, color: "var(--muted)" }}>
                                     Managed by Markdown. Edit <code>{node.sourcePath || 'the source file'}</code> and synchronize the graph.
                                 </p>
                             ) : <button
                                 disabled={!detail || loading}
                                 onClick={() => { setDraft(knowledgeContent); setEditing(true); }}
                                 style={{
-                                    marginTop: 10, padding: '6px 12px', fontSize: 12, fontWeight: 600,
-                                    color: '#fff', background: '#0369a1', border: 'none', borderRadius: 6,
-                                    cursor: 'pointer', fontFamily: 'inherit',
+                                    marginTop: 10,
+                                    "--button-text": "var(--on-accent)", "--button-bg": "var(--accent-strong)", "--button-hover": "var(--accent-hover)", border: 'none',
+                                    cursor: 'pointer',
                                 }}
                             >
                                 ✎ Edit
@@ -869,31 +869,24 @@ function InspectorSidebar({
                                 style={{
                                     width: '100%', minHeight: 160, fontSize: 13, lineHeight: 1.5,
                                     fontFamily: 'inherit', padding: 8, borderRadius: 6,
-                                    border: '1px solid #ccc', boxSizing: 'border-box', resize: 'vertical',
+                                    border: '1px solid var(--border-strong)', boxSizing: 'border-box', resize: 'vertical',
                                 }}
                             />
                             {saveError && (
-                                <div style={{ color: '#dc2626', fontSize: 11, marginTop: 4 }}>{saveError}</div>
+                                <div style={{ color: "var(--danger)", fontSize: 11, marginTop: 4 }}>{saveError}</div>
                             )}
                             <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                                 <button
                                     onClick={saveKnowledge}
                                     disabled={saving}
-                                    style={{
-                                        fontSize: 12, padding: '5px 14px',
-                                        background: saving ? '#9ca3af' : '#16a34a', color: '#fff',
-                                        border: 'none', borderRadius: 6, cursor: saving ? 'default' : 'pointer',
-                                    }}
+                                    className="ui-button ui-button--primary"
                                 >
                                     {saving ? 'Saving…' : 'Save'}
                                 </button>
                                 <button
                                     onClick={() => { setEditing(false); setSaveError(null); }}
                                     disabled={saving}
-                                    style={{
-                                        fontSize: 12, padding: '5px 14px', background: '#e5e5e5',
-                                        border: 'none', borderRadius: 6, cursor: 'pointer',
-                                    }}
+                                    className="ui-button"
                                 >
                                     Cancel
                                 </button>
@@ -905,7 +898,7 @@ function InspectorSidebar({
 
             {/* ── Arbeit & Historie ────────────────────────────────────────── */}
             {(detail?.tasks?.length > 0 || node?.lastError) && (
-                <Section title="Work & History" count={detail?.tasks?.length || undefined} accent="#b45309">
+                <Section title="Work & History" count={detail?.tasks?.length || undefined} accent="var(--warning)">
                     {(detail?.tasks || []).map((t, i) => (
                         <div
                             key={`${t.id}-${t.relType}-${i}`}
@@ -915,28 +908,28 @@ function InspectorSidebar({
                                 cursor: onSelectNode ? 'pointer' : 'default', fontSize: 11,
                             }}
                         >
-                            <span style={{ color: 'var(--muted, #888)', minWidth: 62, fontSize: 10 }}>
+                            <span style={{ color: "var(--muted)", minWidth: 62, fontSize: 10 }}>
                                 {t.relType === 'CREATED' ? 'created' : t.relType === 'REMOVED' ? 'removed'
                                     : t.relType === 'TOUCHED' ? 'edited' : 'affects'}
                             </span>
-                            <span style={{ flex: 1, color: 'var(--text, #1a1a1a)' }}>{t.title || t.taskId}</span>
+                            <span style={{ flex: 1, color: "var(--text)" }}>{t.title || t.taskId}</span>
                             {t.status && <span className="inspector-label-tag">{t.status}</span>}
                             {fmtDate(t.at) && (
-                                <span style={{ color: 'var(--muted, #888)', fontSize: 10 }}>{fmtDate(t.at)}</span>
+                                <span style={{ color: "var(--muted)", fontSize: 10 }}>{fmtDate(t.at)}</span>
                             )}
                         </div>
                     ))}
 
                     {node?.lastError && (
                         <div style={{ marginTop: 8 }}>
-                            <div style={{ fontSize: 11, color: '#dc2626', fontWeight: 600 }}>
+                            <div style={{ fontSize: 11, color: "var(--danger)", fontWeight: 600 }}>
                                 Last runtime error
                                 {fmtDate(node.lastErrorTimestamp) ? ` — ${fmtDate(node.lastErrorTimestamp)}` : ''}
                             </div>
                             <div className="inspector-snippet" style={{ marginTop: 4 }}>{node.lastError}</div>
                             {node.lastErrorStack && (
                                 <details style={{ marginTop: 4 }}>
-                                    <summary style={{ fontSize: 10, color: 'var(--muted, #888)', cursor: 'pointer' }}>
+                                    <summary style={{ fontSize: 10, color: "var(--muted)", cursor: 'pointer' }}>
                                         Stack
                                     </summary>
                                     <div className="inspector-snippet" style={{ marginTop: 4, maxHeight: 160 }}>
@@ -955,7 +948,7 @@ function InspectorSidebar({
                     title="Runtime"
                     count={runtimeRels.reduce((n, g) => n + g.entries.length, 0)}
                     defaultOpen={false}
-                    accent="#0891b2"
+                    accent="var(--info)"
                 >
                     {runtimeRels.map(group => (
                         <RelGroup key={group.key} group={group} onSelect={selectRelationship} />
@@ -983,7 +976,7 @@ function InspectorSidebar({
 function Row({ label, value }) {
     return (
         <div style={{ display: 'flex', gap: 8 }}>
-            <dt style={{ color: 'var(--muted, #888)', minWidth: 80, flexShrink: 0 }}>{label}</dt>
+            <dt style={{ color: "var(--muted)", minWidth: 80, flexShrink: 0 }}>{label}</dt>
             <dd style={{ margin: 0, fontFamily: 'var(--font-mono, monospace)', wordBreak: 'break-word' }}>{value}</dd>
         </div>
     );
@@ -1005,10 +998,10 @@ function RelGroup({ group, onSelect }) {
         <div style={{ marginBottom: 8 }}>
             <div style={{
                 fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8,
-                color: incoming ? '#7c3aed' : '#0369a1', marginBottom: 2,
+                color: incoming ? "var(--violet)" : "var(--info)", marginBottom: 2,
             }}>
                 {incoming ? '←' : '→'} {relLabel(group.relType, group.direction)}
-                <span style={{ color: 'var(--muted, #888)', marginLeft: 6 }}>
+                <span style={{ color: "var(--muted)", marginLeft: 6 }}>
                     {group.total > group.entries.length
                         ? `${group.entries.length} of ${group.total}`
                         : group.total}
@@ -1030,7 +1023,7 @@ function RelGroup({ group, onSelect }) {
                                 <span className="list-name">{e.other.name || `#${e.other.id}`}</span>
                                 {props.length > 0 && (
                                     <span style={{
-                                        display: 'block', fontSize: 10, color: 'var(--muted, #888)',
+                                        display: 'block', fontSize: 10, color: "var(--muted)",
                                         fontFamily: 'var(--font-mono, monospace)', wordBreak: 'break-word',
                                     }}>
                                         {props.join(' · ')}
@@ -1045,8 +1038,8 @@ function RelGroup({ group, onSelect }) {
                 <button
                     onClick={() => setExpanded(true)}
                     style={{
-                        fontSize: 10, color: 'var(--muted, #888)', background: 'none',
-                        border: 'none', cursor: 'pointer', padding: '2px 6px', fontFamily: 'inherit',
+                         "--button-text": "var(--muted)", "--button-bg": 'none',
+                        border: 'none', cursor: 'pointer',
                     }}
                 >
                     … show {hidden} more
