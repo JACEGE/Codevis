@@ -5,6 +5,14 @@ const assert = require("node:assert/strict");
 
 const { NODE_TABLES, REL_SPECS, REL_PROP_UNION, parseColumns } = require("../scripts/ladybug_schema.cjs");
 
+describe("async relationship schema", () => {
+    it("declares every relationship written by the async extractor", () => {
+        for (const type of ["ASYNC_CHAIN", "AWAITS", "SPAWNS"]) {
+            assert.ok(Object.hasOwn(REL_SPECS, type), `${type} must have a relationship table`);
+        }
+    });
+});
+
 describe("ladybug schema fold-in columns", () => {
     it("declares columns for Hook and Async secondary labels", () => {
         const columns = new Map(parseColumns(NODE_TABLES[0]).map((column) => [column.name, column.type]));

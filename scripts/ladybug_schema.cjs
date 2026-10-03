@@ -346,6 +346,8 @@ const REL_SPECS = {
   HANDLES:            {},
   FETCHES:            {},
   AWAITS:             {},
+  // Go's `go f()` starts work; unlike await, it does not wait for completion.
+  SPAWNS:             {},
   RENDERS:            {},
   WRAPS:              {},
   ALIAS_OF:           {},
